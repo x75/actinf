@@ -2,8 +2,12 @@
 
 Sensorimotor learning experiments using the active inference on
 predictive coding approach. Inspired by the input from Bruno Lara and
-Guido Schillaci. This just came out of my main work repo as a
-submodule for easier sharing.
+Guido Schillaci.
+
+This just came out of my main work repo as a submodule for easier
+sharing. This module is work in progress so please expect the
+interface to be changing while integration is happening. If you want
+to make changes, fork and pull request, cheers.
 
 ## Dependencies
 
