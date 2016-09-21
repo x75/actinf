@@ -37,3 +37,34 @@ need specifically:
    mixture model functionality using SOMs with Hebbian associative
    connections and conditional inference
 
+
+## Examples
+
+Run it like
+
+    python active_inference_basic.py --mode type03_goal_prediction_error
+
+which will run the basic proprioceptive only learning scenario.
+
+    python active_inference_basic.py --mode type04_ext_prop --model knn --numsteps 1000
+
+which will run the combined etxtero/proprio learning scenario for 1000
+timesteps (the default anyway) and produce various plots along the way.
+
+Runs of active_inference_basic.py will produce a file "EP.npy" in the
+current directory. This needs to be passed to
+active_inference_hebbsom.py as a datafile to load for testing only the
+e2p prbabilistic mapping part using the Hebbian SOMs.
+
+I run it like
+    python active_inference_hebbsom.py --datafile data/simplearm_n3000/EP.npy
+
+which contains data from a 3000 timesteps run of
+active_inference_basic.py. on the first run, hebbsom will first learn
+the SOMs for E and P, then learn the Hebbian connections (I separated
+it for debugging, rejoining the processes is TODO, considers large
+initial neighborhood_size and decreasing it with time) and finally
+evaluate the learnt mapping by feeding extero signal to the E map,
+activating P map via Hebbian links, sample from P map joint density,
+feed sampled P_ into the real system and compute the end effector
+position.
