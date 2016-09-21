@@ -57,6 +57,7 @@ active_inference_hebbsom.py as a datafile to load for testing only the
 e2p prbabilistic mapping part using the Hebbian SOMs.
 
 I run it like
+
     python active_inference_hebbsom.py --datafile data/simplearm_n3000/EP.npy
 
 which contains data from a 3000 timesteps run of
