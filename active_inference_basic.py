@@ -37,14 +37,17 @@ except ImportError, e:
 
 class ActiveInference(object):
     def __init__(self, mode = "type01_state_prediction_error",
-                 model = "knn", numsteps = 1000):
+                 model = "knn", numsteps = 1000, idim = None):
         self.mode = mode
         self.model = model
         
         self.environment = Environment.from_configuration('simple_arm', 'low_dimensional')
         self.environment.noise = 0.
 
-        self.idim = self.environment.conf.m_ndims * 2
+        if idim is None:
+            self.idim = self.environment.conf.m_ndims * 2
+        else:
+            self.idim = idim
         self.odim = self.environment.conf.m_ndims
         
         # experiment settings
@@ -59,9 +62,10 @@ class ActiveInference(object):
         # initialize vars
         # goal = np.ones((1, environment.conf.m_ndims))
         self.goal = np.random.uniform(self.environment.conf.m_mins, self.environment.conf.m_maxs, (1, self.environment.conf.m_ndims))
-        self.e_pred = np.zeros((1, self.environment.conf.m_ndims))
         self.j = np.zeros((1, self.environment.conf.m_ndims))
         self.m = np.zeros((1, self.environment.conf.m_ndims))
+        # self.e_pred = np.zeros((1, self.environment.conf.m_ndims))
+        self.e_pred = self.m - self.goal
 
 
         # random_motors = environment.random_motors(n=100)
@@ -80,6 +84,8 @@ class ActiveInference(object):
             self.run = self.run_type02_state
         elif mode == "type03_goal_prediction_error":
             self.run = self.run_type03_goal_prediction_error
+        elif mode == "type03_1_prediction_error":
+            self.run = self.run_type03_1_prediction_error
         elif mode == "type04_ext_prop":
             self.run = self.run_type04_ext_prop
         else:
@@ -197,6 +203,7 @@ class ActiveInference(object):
         
         for i in range(self.numsteps):
             X = np.hstack((self.goal, self.e_pred)) # model input: goal and prediction error
+            
             # print "X.shape", X.shape
             # X = np.hstack((self.m, self.e_pred)) # model input: goal and prediction error
             self.s_pred = self.mdl.predict(X) # state prediction
@@ -228,6 +235,7 @@ class ActiveInference(object):
             # print "tgt", tgt
                 
             self.X_.append(X[0,:])
+            
             # self.y_.append(self.m[0,:])
             # self.y_.append(self.goal[0,:])
             self.y_.append(tgt[0,:])
@@ -256,6 +264,80 @@ class ActiveInference(object):
                 print "e_pred = %f" % (np.linalg.norm(self.e_pred, 2))
 
             pl.ioff()
+
+    ################################################################################
+    def run_type03_1_prediction_error(self):
+        """active inference / predictive coding: first working, most basic version,
+        proprioceptive only
+        
+        just prediction error -> goal state prediction -> goal/state error -> update forward model"""
+        
+        for i in range(self.numsteps):
+            X6 = np.hstack((self.goal, self.e_pred)) # model input: goal and prediction error
+            X = np.hstack((self.e_pred)).reshape((1, self.idim)) # model input: just prediction error
+            # print "X.shape", X.shape
+            # X = np.hstack((self.m, self.e_pred)) # model input: goal and prediction error
+            self.s_pred = self.mdl.predict(X) # state prediction
+
+            # inverse model / motor primitive / reflex arc / ...
+            self.m = self.environment.compute_motor_command(self.m + self.s_pred) #
+            # self.m += 
+            # distort response
+            # self.m = np.sin(self.m * np.pi/1.95) # * 1.333
+            # self.m = np.exp(self.m) - 1.0 # * 1.333
+            # self.m = (gaussian(0, 0.5, self.m) - 0.4) * 5
+            # add noise
+            self.m += np.random.normal(0, 0.01, self.m.shape)
+
+            # prediction error's
+            # self.e_pred = np.zeros(self.m.shape)
+            self.e_pred_goal  = self.m - self.goal
+            self.e_pred = self.e_pred_goal
+            # self.e_pred_state = self.s_pred - self.m
+            # self.e_pred = self.e_pred_state
+            
+            # execute command
+            s_ext = self.environment.compute_sensori_effect(self.m.T)
+            # self.environment.plot_arm()
+            # print s_ext
+
+            # if i % 10 == 0: # play with decreased update rates
+            # tgt = self.s_pred - (self.e_pred * 0.02) # error-only
+            tgt = -self.e_pred * 1.0
+            # FIXME: what is the target if there is no trivial mapping of the error?
+            # print "tgt", tgt
+                
+            self.X_.append(X6[0,:]) # error-only
+            
+            # self.y_.append(self.m[0,:])
+            # self.y_.append(self.goal[0,:])
+            self.y_.append(tgt[0,:])
+
+            # self.mdl.fit(self.X_, self.y_)
+            # if i < 300:
+            self.mdl.fit(X, tgt)
+            
+            # print s_pred
+            # print "X.shape, s_pred.shape, e_pred.shape, m.shape, s_ext.shape", X.shape, s_pred.shape, e_pred.shape, m.shape, s_ext.shape
+
+            self.S_pred[i] = self.s_pred
+            self.E_pred[i] = self.e_pred
+            self.M[i]      = self.m
+            
+            if i % 50 == 0:
+                # # continuous goal
+                # w = float(i)/self.numsteps
+                # f1 = 0.05 # float(i)/10000 + 0.01
+                # f2 = 0.08 # float(i)/10000 + 0.02
+                # f3 = 0.1 # float(i)/10000 + 0.03
+                # self.goal = np.sin(i * np.array([f1, f2, f3])).reshape((1, self.environment.conf.m_ndims))
+                # discrete goal
+                self.goal = np.random.uniform(self.environment.conf.m_mins, self.environment.conf.m_maxs, (1, self.environment.conf.m_ndims))
+                print "new goal[%d] = %s" % (i, self.goal)
+                print "e_pred = %f" % (np.linalg.norm(self.e_pred, 2))
+
+            pl.ioff()
+            
 
     ################################################################################
     def run_type04_ext_prop(self):
@@ -616,7 +698,10 @@ def main(args):
     if args.mode.startswith("test_"):
         test_models(args)
     else:
-        inf = ActiveInference(args.mode, args.model, args.numsteps)
+        idim = None
+        if args.mode.startswith("type03_1"):
+            idim = 3
+        inf = ActiveInference(args.mode, args.model, args.numsteps, idim = idim)
 
         inf.run()
 

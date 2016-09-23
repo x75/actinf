@@ -46,6 +46,13 @@ Run it like
 
 which will run the basic proprioceptive only learning scenario.
 
+This will also run a p-only learning but different setup, FWDp only get's the error
+as an input.
+
+    python active_inference_basic.py --mode type03_1_prediction_error --numsteps 2000 --model knn
+
+This command
+
     python active_inference_basic.py --mode type04_ext_prop --model knn --numsteps 1000
 
 which will run the combined etxtero/proprio learning scenario for 1000
