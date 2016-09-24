@@ -3,6 +3,8 @@ import numpy as np
 import pylab as pl
 
 from explauto import Environment
+from explauto.environment import environments
+from explauto.environment.pointmass import PointmassEnvironment
 
 # from sklearn.neighbors import KNeighborsRegressor
 
@@ -42,6 +44,7 @@ class ActiveInference(object):
         self.model = model
         
         self.environment = Environment.from_configuration('simple_arm', 'low_dimensional')
+        # self.environment = Environment.from_configuration('pointmass', 'low_dim_vel')
         self.environment.noise = 0.
 
         if idim is None:
