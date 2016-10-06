@@ -26,6 +26,7 @@ except ImportError, e:
 #       irregularly can the transfer function be changed for a given learner
 # TODO: compute PI,AIS,TE for goal->state, input->pred_error, s_pred->s to
 #       answer qu's like: how much is there to learn, how much is learned
+# TODO: pass pre-generated system into actinf machine, so we can use random robots with parameterized DoF, stiffness, force budget, DoF coupling coefficient
 
 # # import numpy as np
 # from sklearn import linear_model
@@ -65,11 +66,12 @@ class ActiveInference(object):
         # initialize vars
         # goal = np.ones((1, environment.conf.m_ndims))
         self.goal = np.random.uniform(self.environment.conf.m_mins, self.environment.conf.m_maxs, (1, self.environment.conf.m_ndims))
+        self.goal_tm1 = np.zeros_like(self.goal)
         self.j = np.zeros((1, self.environment.conf.m_ndims))
         self.m = np.zeros((1, self.environment.conf.m_ndims))
         # self.e_pred = np.zeros((1, self.environment.conf.m_ndims))
         self.e_pred = self.m - self.goal
-
+        self.s_pred = np.random.normal(0, 0.01, (1, self.environment.conf.m_ndims))
 
         # random_motors = environment.random_motors(n=100)
 
@@ -273,75 +275,114 @@ class ActiveInference(object):
 
     ################################################################################
     def run_type03_1_prediction_error(self):
-        """active inference / predictive coding: first working, most basic version,
-        proprioceptive only
+        """active inference / predictive coding: most basic version (?), proprioceptive only
         
-        just prediction error -> goal state prediction -> goal/state error -> update forward model"""
+        just goal/state error -> mdl -> goal/state error prediction -> goal/state error -> update forward model"""
+
+        # some init foo
+        X6 = np.hstack((self.goal, self.e_pred)) # model input: goal and prediction error
+        X = np.hstack((self.e_pred)).reshape((1, self.idim)) # model input: just prediction error
+
+        # if draw:      
+        # ax = pl.subplot(111)
+        # ax.set_aspect(1)
         
         for i in range(self.numsteps):
-            
-            X6 = np.hstack((self.goal, self.e_pred)) # model input: goal and prediction error
-            X = np.hstack((self.e_pred)).reshape((1, self.idim)) # model input: just prediction error
-            # print "X.shape", X.shape
-            # X = np.hstack((self.m, self.e_pred)) # model input: goal and prediction error
-            self.s_pred = self.mdl.predict(X) # state prediction
+            # rearrange to comply with tapping
+            # t has just become t+1
 
+            # safe last goal g_{t-1}
+            self.goal_tm1 = self.goal.copy()
+                        
+            # 1. pick a goal g_t
+            if False and i % 1 == 0:
+                # continuous goal
+                w = float(i)/self.numsteps
+                f1 = 0.05 # float(i)/10000 + 0.01
+                f2 = 0.08 # float(i)/10000 + 0.02
+                f3 = 0.1 # float(i)/10000 + 0.03
+                self.goal = np.sin(i * np.array([f1, f2, f3])).reshape((1, self.environment.conf.m_ndims))
+                
+            if i % 50 == 0:
+                # discrete goal
+                self.goal = np.random.uniform(self.environment.conf.m_mins, self.environment.conf.m_maxs, (1, self.environment.conf.m_ndims))
+                print "g_[%d] = %s" % (i, self.goal)
+                print "e_pred[%d] = %f" % (i-1, np.linalg.norm(self.e_pred, 2))
+
+            # print "goal equal?",
+
+            # 2. new information available / new measurement, s_t
             # inverse model / motor primitive / reflex arc / ...
             self.m = self.environment.compute_motor_command(self.m + self.s_pred) #
-            # self.m += 
-            # distort response
-            # self.m = np.sin(self.m * np.pi/1.95) # * 1.333
+            
+            # execute command with exteroceptive effect
+            s_ext = self.environment.compute_sensori_effect(self.m.T)
+
+            # if draw:
+            # self.environment.plot_arm(ax, self.m.T)
+            # pl.pause(0.001)
+
+            # print s_ext
+            # self.m +=
+
+            # 2a. optionally distort response
+            self.m = np.sin(self.m * np.pi/1.95) # * 1.333
             # self.m = np.exp(self.m) - 1.0 # * 1.333
             # self.m = (gaussian(0, 0.5, self.m) - 0.4) * 5
-            # add noise
+
+            # 2b. add noise
             self.m += np.random.normal(0, 0.01, self.m.shape)
 
-            # prediction error's
+            # 3. compute error of measured state s_t with respect to current goal g_t
+            #    s_t is called m here for some reason ;)
+
             # self.e_pred = np.zeros(self.m.shape)
-            self.e_pred_goal  = self.m - self.goal
-            self.e_pred = self.e_pred_goal
+            # self.e_pred_goal  = 
+            self.e_pred = self.m - self.goal_tm1 # self.e_pred_goal
             # self.e_pred_state = self.s_pred - self.m
             # self.e_pred = self.e_pred_state
             
-            # execute command
-            s_ext = self.environment.compute_sensori_effect(self.m.T)
-            # self.environment.plot_arm()
-            # print s_ext
 
+            # 4. compute target
             # if i % 10 == 0: # play with decreased update rates
             # tgt = self.s_pred - (self.e_pred * 0.02) # error-only
-            tgt = -self.e_pred * 1.0
+            tgt = -self.e_pred * 1.0 # i am amazed this works
             # FIXME: what is the target if there is no trivial mapping of the error?
             # print "tgt", tgt
-                
-            self.X_.append(X6[0,:]) # error-only
-            
-            # self.y_.append(self.m[0,:])
-            # self.y_.append(self.goal[0,:])
-            self.y_.append(tgt[0,:])
 
+            # 5. fit model
             # self.mdl.fit(self.X_, self.y_)
             # if i < 300:
             self.mdl.fit(X, tgt)
-            
+
+            # debug            
             # print s_pred
             # print "X.shape, s_pred.shape, e_pred.shape, m.shape, s_ext.shape", X.shape, s_pred.shape, e_pred.shape, m.shape, s_ext.shape
+                
+            # prepare new model inputs
+            X6 = np.hstack((self.goal, self.e_pred)) # model input: goal and prediction error
+
+            if np.sum(np.abs(self.goal - self.goal_tm1)) > 1e-6:
+                X = np.hstack((self.m - self.goal)).reshape((1, self.idim)) # model input: just prediction error
+            else:
+                X = np.hstack((self.e_pred)).reshape((1, self.idim)) # model input: just prediction error
+            # print "X.shape", X.shape
+            # X = np.hstack((self.m, self.e_pred)) # model input: goal and prediction error
+
+            # 6. compute prediction
+            self.s_pred = self.mdl.predict(X) # state prediction
+            # self.s_pred = X.copy() # identity doesn't do the job
+
+            # logging
+            self.X_.append(X6[0,:]) # also track goal here, X6
+            # self.y_.append(self.m[0,:])
+            # self.y_.append(self.goal[0,:])
+            self.y_.append(tgt[0,:])
 
             self.S_pred[i] = self.s_pred
             self.E_pred[i] = self.e_pred
             self.M[i]      = self.m
             
-            if i % 50 == 0:
-                # # continuous goal
-                # w = float(i)/self.numsteps
-                # f1 = 0.05 # float(i)/10000 + 0.01
-                # f2 = 0.08 # float(i)/10000 + 0.02
-                # f3 = 0.1 # float(i)/10000 + 0.03
-                # self.goal = np.sin(i * np.array([f1, f2, f3])).reshape((1, self.environment.conf.m_ndims))
-                # discrete goal
-                self.goal = np.random.uniform(self.environment.conf.m_mins, self.environment.conf.m_maxs, (1, self.environment.conf.m_ndims))
-                print "new goal[%d] = %s" % (i, self.goal)
-                print "e_pred = %f" % (np.linalg.norm(self.e_pred, 2))
 
             pl.ioff()
             
