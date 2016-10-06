@@ -91,6 +91,8 @@ class ActiveInference(object):
             self.run = self.run_type03_1_prediction_error
         elif mode == "type04_ext_prop":
             self.run = self.run_type04_ext_prop
+        elif mode == "type05_multiple_models":
+            self.run = self.run_type05_multiple_models
         else:
             print "unknown mode, FAIL"
             
@@ -205,6 +207,7 @@ class ActiveInference(object):
         goal -> goal state prediction -> goal/state error -> update forward model"""
         
         for i in range(self.numsteps):
+                
             X = np.hstack((self.goal, self.e_pred)) # model input: goal and prediction error
             
             # print "X.shape", X.shape
@@ -276,6 +279,7 @@ class ActiveInference(object):
         just prediction error -> goal state prediction -> goal/state error -> update forward model"""
         
         for i in range(self.numsteps):
+            
             X6 = np.hstack((self.goal, self.e_pred)) # model input: goal and prediction error
             X = np.hstack((self.e_pred)).reshape((1, self.idim)) # model input: just prediction error
             # print "X.shape", X.shape
@@ -621,6 +625,21 @@ class ActiveInference(object):
         pl.plot(np.linalg.norm(self.E_e_pred[e2pidx], 2, axis=1))
         pl.show()
         
+    ################################################################################
+    def run_type05_multiple_models(self):
+        """active inference / predictive coding: first working, most basic version,
+        proprioceptive only
+        
+        goal -> goal state prediction -> goal/state error -> update forward model"""
+        
+        for i in range(self.numsteps):
+            # FIXME: this needs a major update: try with a pool of multiple models
+            if i == 1200:
+                self.environment.factor = 0.8
+                
+            X = np.hstack((self.goal, self.e_pred)) # model input: goal and prediction error
+
+            
     def plot_experiment(self):
         # convert list to array
         self.X__ = np.array(self.X_)
