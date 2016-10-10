@@ -20,7 +20,7 @@
    sodipodi:docname="mdl_prediction_error_and_goal.svg"><metadata
      id="metadata3010"><rdf:RDF><cc:Work
          rdf:about=""><dc:format>image/svg+xml</dc:format><dc:type
-           rdf:resource="http://purl.org/dc/dcmitype/StillImage" /><dc:title></dc:title></cc:Work></rdf:RDF></metadata><defs
+           rdf:resource="http://purl.org/dc/dcmitype/StillImage" /><dc:title /></cc:Work></rdf:RDF></metadata><defs
      id="defs3008"><linearGradient
        id="linearGradient5545"
        osb:paint="solid"><stop
@@ -706,9 +706,9 @@
      inkscape:window-height="1176"
      id="namedview3006"
      showgrid="false"
-     inkscape:zoom="0.4741096"
-     inkscape:cx="591.43897"
-     inkscape:cy="-173.17768"
+     inkscape:zoom="1.8964384"
+     inkscape:cx="517.87145"
+     inkscape:cy="133.90071"
      inkscape:window-x="65"
      inkscape:window-y="24"
      inkscape:window-maximized="1"
@@ -1166,7 +1166,7 @@
          sodipodi:nodetypes="cc"
          inkscape:connector-curvature="0"
          id="path368687-3"
-         d="m 521.76671,723.76159 c 4.13164,-5.22924 11.34409,-17.0466 13.43406,-26.82038"
+         d="m 522.36329,708.39974 c 6.81623,-0.90406 10.59837,-4.81678 11.94262,-11.60767"
          style="fill:none;stroke:#818181;stroke-width:0.80000001px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1;marker-end:url(#marker368738);display:inline" /><rect
          style="fill:none;stroke:#000000;stroke-width:0.80000001;stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:4;stroke-opacity:1;stroke-dasharray:none;stroke-dashoffset:0;display:inline"
          id="rect366228-7-7-6-3-8"
