@@ -1,4 +1,4 @@
-import argparse
+import argparse, cPickle, os
 import numpy as np
 import pylab as pl
 
@@ -43,6 +43,7 @@ class ActiveInference(object):
                  model = "knn", numsteps = 1000, idim = None):
         self.mode = mode
         self.model = model
+        self.mdl_pkl = "mdl.bin"
         
         self.environment = Environment.from_configuration('simple_arm', 'low_dimensional')
         # self.environment = Environment.from_configuration('pointmass', 'low_dim_vel')
@@ -202,11 +203,115 @@ class ActiveInference(object):
                 self.goal = np.random.uniform(self.environment.conf.m_mins, self.environment.conf.m_maxs, (1, self.environment.conf.m_ndims))
 
     ################################################################################
+    def map_model_type03_goal_prediction_error(self):
+        """plot model output over model input sweep"""
+
+        # randomize initial position
+        self.m = self.environment.compute_motor_command(np.random.uniform(-1.0, 1.0, (1, self.environment.conf.m_ndims)))
+        # draw random goal and keep it fixed
+        self.goal = self.environment.compute_motor_command(np.random.uniform(-1.0, 1.0, (1, self.environment.conf.m_ndims)))
+        # self.goal = np.random.uniform(self.environment.conf.m_mins, self.environment.conf.m_maxs, (1, self.environment.conf.m_ndims))
+        
+        # sweep error and record output
+        # ERROR =
+        numgrid = 5
+        
+        x_ = np.linspace(-1., 1., numgrid)
+        y_ = np.linspace(-1., 1., numgrid)
+        z_ = np.linspace(-1., 1., numgrid)
+
+        x, y, z = np.meshgrid(x_, y_, z_, indexing='ij')
+        print "x.shape", x.shape
+        print "x", x.flatten()
+        print "y", y.flatten()
+        print "z", z.flatten()
+        allpoints = np.vstack((x.flatten(), y.flatten(), z.flatten()))
+        GOALS = np.repeat(self.goal, allpoints.shape[1], axis = 0)
+        X = np.hstack((GOALS, allpoints.T))
+        
+        # # allpoints = np.concatenate((x, y, z)) # .reshape((numgrid, numgrid, numgrid))
+        # print "allpoints", allpoints.shape, allpoints[:]
+                
+        # # print "x[0,0,0]", x[0,0,[0]],y[0,0,[0]],z[0,0,:]
+        # X_ = np.vstack((x[0,0,:],y[0,0,:],z[0,0,:]))
+        # print "X_.shape", X_.shape, X_[:,0].shape, X_
+        # GOALS = np.repeat(self.goal, numgrid, axis = 0)
+        # print "self.goal.shape", self.goal.shape
+        # print "GOALS.shape", GOALS.shape
+        # X = np.hstack((GOALS, X_.T))
+        
+        self.e_pred = self.m - self.goal
+        # X_s = []
+        # X_s.append(np.hstack((self.goal, self.e_pred))) # model input: goal and prediction error
+        # X_s.append(np.hstack((self.goal, X_[:,0].reshape((1, 3))))) # model input: goal and prediction error
+        # # X_s = X_.tolist()
+        # # GOALS = np.repeat
+        # X = np.vstack(X_s)
+        print "X.shape", X.shape
+        # print "pred", self.mdl.predict(X)
+        pred = self.mdl.predict(X)
+        print "pred", pred.shape
+
+        from sklearn.decomposition import PCA
+
+        X_pca = PCA(n_components = 2)
+        X_pca.fit(X)
+        pred_pca = PCA(n_components = 1)
+        pred_pca.fit(pred)
+
+        X_red = X_pca.transform(X)
+        print X_red[:,0].shape
+        pred_red = pred_pca.transform(pred)
+        
+        pl.ioff()
+        import matplotlib.colors as mcol
+        import matplotlib.cm as cm
+
+        cmap = pl.get_cmap("gray")
+
+        # m = cm.ScalarMappable(norm=None, cmap=cmap)
+        from matplotlib.colors import colorConverter
+        # X_grid, Y_grid = np.meshgrid(X_red[:,0], X_red[:,1])
+        # print X_grid.shape
+        # pl.pcolormesh(X_red[:,0], X_red[:,1], pred_red)
+        # pl.pcolormesh(X_grid, Y_grid, pred_red)
+        # cc = colorConverter
+        pred_red -= np.min(pred_red) 
+        pred_red /= np.max(pred_red)
+        colorsss = [colorConverter.to_rgb(str(_)) for _ in pred_red.flatten()]
+        print colorsss
+        
+        # pl.scatter(X_red[:,0], X_red[:,1], color = colorsss)
+        pl.scatter(X[:,3], X[:,4], color = colorsss, s = 100)
+        pl.scatter(X[:,3] + 2.5, X[:,5], color = colorsss, s = 100)
+        pl.scatter(X[:,4] + 0.0, X[:,5] + 2.5, color = colorsss, s = 100)
+        
+        # pl.scatter(X_red[:,0], X_red[:,1], color=pred_red)
+        pl.show()
+        
+                                
+        # print "x, y, z", x, y, z
+        # print "x, y, z", x.shape, y.shape, z.shape
+        # pick given goal transition and corresponding errors, sweep errors
+
+        # try and make it unstable?
+
+        
+        
+        # self.idim
+        # self.odim
+        
+        
     def run_type03_goal_prediction_error(self):
         """active inference / predictive coding: first working, most basic version,
         proprioceptive only
         
         goal -> goal state prediction -> goal/state error -> update forward model"""
+
+        if os.path.exists(self.mdl_pkl):
+            self.mdl = cPickle.load(open(self.mdl_pkl, "rb"))
+            self.map_model_type03_goal_prediction_error()
+            return
         
         for i in range(self.numsteps):
                 
@@ -273,6 +378,8 @@ class ActiveInference(object):
 
             pl.ioff()
 
+        cPickle.dump(self.mdl, open(self.mdl_pkl, "wb"))
+            
     ################################################################################
     def run_type03_1_prediction_error(self):
         """active inference / predictive coding: most basic version (?), proprioceptive only
@@ -682,6 +789,8 @@ class ActiveInference(object):
 
             
     def plot_experiment(self):
+        if len(self.X_) <= 0:
+            return
         # convert list to array
         self.X__ = np.array(self.X_)
         # start
@@ -773,10 +882,12 @@ def main(args):
 if __name__ == "__main__":
     modes = [
         "test_models",
-        "type01_state_prediction_error",
-        "type02_state",
+#        "type01_state_prediction_error",
+#        "type02_state",
         "type03_goal_prediction_error",
+        "type03_1_prediction_error",
         "type04_ext_prop",
+        "type05_multiple_models",
     ]
         
     parser = argparse.ArgumentParser()
