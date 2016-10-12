@@ -255,40 +255,77 @@ class ActiveInference(object):
         from sklearn.decomposition import PCA
 
         X_pca = PCA(n_components = 2)
-        X_pca.fit(X)
+        # X_pca.fit(X)
+        X_pca.fit(allpoints.T)
         pred_pca = PCA(n_components = 1)
         pred_pca.fit(pred)
 
-        X_red = X_pca.transform(X)
-        print X_red[:,0].shape
+        # X_red = X_pca.transform(X)
+        X_red = X_pca.transform(allpoints.T)
+        print "X_red.shape", X_red.shape, np.min(X_red, axis=0), np.max(X_red, axis=0)
         pred_red = pred_pca.transform(pred)
+        print "pred_red", pred_red.shape
         
         pl.ioff()
-        import matplotlib.colors as mcol
-        import matplotlib.cm as cm
 
-        cmap = pl.get_cmap("gray")
+        # ################################################################################
+        # # plot type 1
+        # import matplotlib.colors as mcol
+        # import matplotlib.cm as cm
 
-        # m = cm.ScalarMappable(norm=None, cmap=cmap)
-        from matplotlib.colors import colorConverter
-        # X_grid, Y_grid = np.meshgrid(X_red[:,0], X_red[:,1])
-        # print X_grid.shape
+        # cmap = pl.get_cmap("gray")
+
+        # # m = cm.ScalarMappable(norm=None, cmap=cmap)
+        # from matplotlib.colors import colorConverter
+        # # X_grid, Y_grid = np.meshgrid(X_red[:,0], X_red[:,1])
+        # # print X_grid.shape
+        # # pl.pcolormesh(X_red[:,0], X_red[:,1], pred_red)
+        # # pl.pcolormesh(X_grid, Y_grid, pred_red)
+        # # cc = colorConverter
+        # pred_red -= np.min(pred_red) 
+        # pred_red /= np.max(pred_red)
+        # colorsss = [colorConverter.to_rgb(str(_)) for _ in pred_red.flatten()]
+        # print colorsss
+        
+        # # pl.scatter(X_red[:,0], X_red[:,1], color = colorsss)
+        # pl.scatter(X[:,3], X[:,4], color = colorsss, s = 100)
+        # pl.scatter(X[:,3] + 2.5, X[:,5], color = colorsss, s = 100)
+        # pl.scatter(X[:,4] + 0.0, X[:,5] + 2.5, color = colorsss, s = 100)
+        
+        # # pl.scatter(X_red[:,0], X_red[:,1], color=pred_red)
+        # pl.show()
+
+        ################################################################################
+        # plot type 2: hexbin
+
+        ################################################################################
+        # plot type 3: pcolormesh
         # pl.pcolormesh(X_red[:,0], X_red[:,1], pred_red)
-        # pl.pcolormesh(X_grid, Y_grid, pred_red)
-        # cc = colorConverter
-        pred_red -= np.min(pred_red) 
-        pred_red /= np.max(pred_red)
-        colorsss = [colorConverter.to_rgb(str(_)) for _ in pred_red.flatten()]
-        print colorsss
+
+        X_grid_margin = np.linspace(np.min(X_red[:,0]), np.max(X_red[:,0]), numgrid)
+        Y_grid_margin = np.linspace(np.min(X_red[:,1]), np.max(X_red[:,1]), numgrid)
+        X_grid, Y_grid = np.meshgrid(X_grid_margin, Y_grid_margin)
+
+        print "grid shapes", X_grid_margin.shape, Y_grid_margin.shape, X_grid.shape, Y_grid.shape
+
+        import pandas as pd
+        from pandas.tools.plotting import scatter_matrix
+        # df = pd.DataFrame(X, columns=['x1_t', 'x2_t', 'x1_tptau', 'x2_tptau', 'u_t'])
+        scatter_data_raw = np.hstack((allpoints.T, pred))
+        print "scatter_data_raw", scatter_data_raw.shape
         
-        # pl.scatter(X_red[:,0], X_red[:,1], color = colorsss)
-        pl.scatter(X[:,3], X[:,4], color = colorsss, s = 100)
-        pl.scatter(X[:,3] + 2.5, X[:,5], color = colorsss, s = 100)
-        pl.scatter(X[:,4] + 0.0, X[:,5] + 2.5, color = colorsss, s = 100)
-        
-        # pl.scatter(X_red[:,0], X_red[:,1], color=pred_red)
+        df = pd.DataFrame(scatter_data_raw, columns=["x_%d" % i for i in range(scatter_data_raw.shape[1])])
+        scatter_matrix(df, alpha=0.2, figsize=(10, 10), diagonal='kde')
         pl.show()
-        
+                
+        # pl.subplot(121)
+        # # pl.scatter(X_red[:,0], X_red[:,1])
+        # pl.scatter(X_red[:,0], X_red[:,1])
+        # pl.subplot(122)
+        # pl.pcolormesh(pred_red)
+        # # pl.plot(pred_red)
+        # pl.show()
+                
                                 
         # print "x, y, z", x, y, z
         # print "x, y, z", x.shape, y.shape, z.shape

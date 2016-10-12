@@ -1,0 +1,91 @@
+#+TITLE: Active inference and predictive coding for learning in proprioceptive space
+#+AUTHOR: Guido, Bruno, Alejandra, Esau, Oswald
+
+#+OPTIONS: toc:nil
+#+LATEX_HEADER: \usepackage{fullpage}
+#+LATEX_HEADER: \usepackage{lmodern}
+#+LATEX_HEADER: \usepackage{subfigure}
+#+LATEX_HEADER: \usepackage{titling}
+#+LATEX_HEADER: \usepackage{wrapfig}
+#+LATEX_HEADER: \usepackage{hyperref}
+#+LATEX_HEADER: \renewcommand{\familydefault}{\sfdefault}
+#+LATEX_HEADER: \parindent10pt
+
+#+LaTeX_HEADER: \usepackage[style=authoryear,backend=biber,bibencoding=utf8,natbib]{biblatex}
+#+LaTeX_HEADER: \bibliography{research}
+
+#+BIBLIOGRAPHY: research plainnat
+
+#+BEGIN_abstract
+Short description of the project
+#+END_abstract
+
+* Notes
+** control theory parallels
+
+i don't see this as a problem at all, to the contrary, it means if you
+arrive at a model setup you can actually look to adaptive control and
+translate the solution to your formulation.
+
+in terms of the philosophy see email from <2016-10-11 Di> so it's
+clearly about a different issue.
+
+** merge bruno's initial draft
+** guido + opt's notes
+
+the way we initially thought about it was to have two papers (1 + 2)
+but here we can just sketch it out, accumulate the experiments and
+split later if needed.
+
+*** paper 1
+
+proprio-space only
+
+*** paper 2
+
+connecting extero and proprio space
+
+* Introduction
+
+Motor control for autonmous agents that need to learn some things
+about the relations between observable quantities.
+
+* Related
+
+Long history, many models: control, development, RL, ...
+
+* Core idea and models 
+ 1. discuss the change of terminology or dichotomies regarding:
+  - predictions/motor commands,
+  - forward models/inverse models/controllers/policies
+  - bottom level black box: different actual forward model (FM)
+    representations via SOMs, kNN, RLS, GP, ...
+  - see discussion with antonio re: "it's just labels", underneath it is a raw
+    network of signal flows putting observable quantities into
+    relation to each other, from which apparent goal-driven behaviour
+    (teleology) emerges
+ 2. two models and their difference in terms of learning dynamics. do
+    any dynamic properties support or contradict biological motor learning?
+  1. M1: explicit goal + error as input
+  2. M2: error only as input
+  3. merge with alejandra's two versions (explicit update rule)
+ 3. Experiments
+  - deploy models to different robotic systems: Nao, SimpleArm,
+    Pointmass, two-wheeled
+  - timeseries analysis
+  - learning transient (arbitrarily fast, see Tin + Poon)
+  - explicitly map out the acquired models by sweeping the inputs and
+    record their outputs
+  - what happens under perturbation?
+  - long-term adaptation effects: are we only plastic or are we also
+    stable? do new adaptations overwrite previous ones? does a given
+    approximator become saturated (just think how critical weight
+    initialization in neural networks can be) in terms of its adaption
+    capacity?, can be enforced via decay schedules of learning rate
+    etc
+ 4. discuss, compare with existing approaches like std fwd/inv model
+    pairs or reinforcement learning
+
+* Experiments
+* Discussion
+* Summary
