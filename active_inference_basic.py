@@ -205,12 +205,7 @@ class ActiveInference(object):
     ################################################################################
     def map_model_type03_goal_prediction_error(self):
         """plot model output over model input sweep"""
-
-        # randomize initial position
-        self.m = self.environment.compute_motor_command(np.random.uniform(-1.0, 1.0, (1, self.environment.conf.m_ndims)))
-        # draw random goal and keep it fixed
-        self.goal = self.environment.compute_motor_command(np.random.uniform(-1.0, 1.0, (1, self.environment.conf.m_ndims)))
-        # self.goal = np.random.uniform(self.environment.conf.m_mins, self.environment.conf.m_maxs, (1, self.environment.conf.m_ndims))
+        doplot_scattermatrix = False
         
         # sweep error and record output
         # ERROR =
@@ -225,12 +220,27 @@ class ActiveInference(object):
         print "x", x.flatten()
         print "y", y.flatten()
         print "z", z.flatten()
-        allpoints = np.vstack((x.flatten(), y.flatten(), z.flatten()))
-        GOALS = np.repeat(self.goal, allpoints.shape[1], axis = 0)
-        X = np.hstack((GOALS, allpoints.T))
+        error_grid = np.vstack((x.flatten(), y.flatten(), z.flatten()))
+
+        # draw 5 different current state / goal configurations
+        X_accum = []
+        for i in range(numgrid):
+            # randomize initial position
+            self.m = self.environment.compute_motor_command(np.random.uniform(-1.0, 1.0, (1, self.environment.conf.m_ndims)))
+            # draw random goal and keep it fixed
+            self.goal = self.environment.compute_motor_command(np.random.uniform(-1.0, 1.0, (1, self.environment.conf.m_ndims)))
+            # self.goal = np.random.uniform(self.environment.conf.m_mins, self.environment.conf.m_maxs, (1, self.environment.conf.m_ndims))
+            GOALS = np.repeat(self.goal, error_grid.shape[1], axis = 0)
+            X = np.hstack((GOALS, error_grid.T))
+            X_accum.append(X)
+
+        X_accum = np.array(X_accum)
+        X_accum = X_accum.reshape((X_accum.shape[0] * X_accum.shape[1], X_accum.shape[2]))
+        print "X_accum.shape", X_accum.shape
+        X = X_accum
         
-        # # allpoints = np.concatenate((x, y, z)) # .reshape((numgrid, numgrid, numgrid))
-        # print "allpoints", allpoints.shape, allpoints[:]
+        # # error_grid = np.concatenate((x, y, z)) # .reshape((numgrid, numgrid, numgrid))
+        # print "error_grid", error_grid.shape, error_grid[:]
                 
         # # print "x[0,0,0]", x[0,0,[0]],y[0,0,[0]],z[0,0,:]
         # X_ = np.vstack((x[0,0,:],y[0,0,:],z[0,0,:]))
@@ -250,18 +260,18 @@ class ActiveInference(object):
         print "X.shape", X.shape
         # print "pred", self.mdl.predict(X)
         pred = self.mdl.predict(X)
-        print "pred", pred.shape
+        print "pred.shape", pred.shape
 
         from sklearn.decomposition import PCA
 
         X_pca = PCA(n_components = 2)
         # X_pca.fit(X)
-        X_pca.fit(allpoints.T)
+        X_pca.fit(error_grid.T)
         pred_pca = PCA(n_components = 1)
         pred_pca.fit(pred)
 
         # X_red = X_pca.transform(X)
-        X_red = X_pca.transform(allpoints.T)
+        X_red = X_pca.transform(error_grid.T)
         print "X_red.shape", X_red.shape, np.min(X_red, axis=0), np.max(X_red, axis=0)
         pred_red = pred_pca.transform(pred)
         print "pred_red", pred_red.shape
@@ -299,25 +309,41 @@ class ActiveInference(object):
         # plot type 2: hexbin
 
         ################################################################################
-        # plot type 3: pcolormesh
+        # plot type 3: pcolormesh, using dimstack
+        from smp.dimstack import dimensional_stacking
         # pl.pcolormesh(X_red[:,0], X_red[:,1], pred_red)
-
-        X_grid_margin = np.linspace(np.min(X_red[:,0]), np.max(X_red[:,0]), numgrid)
-        Y_grid_margin = np.linspace(np.min(X_red[:,1]), np.max(X_red[:,1]), numgrid)
-        X_grid, Y_grid = np.meshgrid(X_grid_margin, Y_grid_margin)
-
-        print "grid shapes", X_grid_margin.shape, Y_grid_margin.shape, X_grid.shape, Y_grid.shape
-
-        import pandas as pd
-        from pandas.tools.plotting import scatter_matrix
-        # df = pd.DataFrame(X, columns=['x1_t', 'x2_t', 'x1_tptau', 'x2_tptau', 'u_t'])
-        scatter_data_raw = np.hstack((allpoints.T, pred))
-        print "scatter_data_raw", scatter_data_raw.shape
-        
-        df = pd.DataFrame(scatter_data_raw, columns=["x_%d" % i for i in range(scatter_data_raw.shape[1])])
-        scatter_matrix(df, alpha=0.2, figsize=(10, 10), diagonal='kde')
+        # A = np.hstack((X, pred[:,[0, 1]]))
+        # (5, 5, 5 Goals, 5, 5, 5, errors, 5, 5, 5, preds) z.shape = (5, 5, 5, 5)
+        vmin, vmax = np.min(pred), np.max(pred)
+        for i in range(3):
+            pl.subplot(3, 1, i+1)
+            p1 = pred[:,i].reshape((numgrid, numgrid, numgrid, numgrid))
+            d1_stacked = dimensional_stacking(p1, [0, 1], [2, 3])
+            pl.pcolormesh(d1_stacked, vmin=vmin, vmax=vmax)
+            pl.gca().set_aspect(1.0)
+            if i == 2:
+                pl.colorbar(orientation="horizontal")
         pl.show()
-                
+
+        ################################################################################
+        # plot type 4: scattermatrix
+        if doplot_scattermatrix:
+            X_grid_margin = np.linspace(np.min(X_red[:,0]), np.max(X_red[:,0]), numgrid)
+            Y_grid_margin = np.linspace(np.min(X_red[:,1]), np.max(X_red[:,1]), numgrid)
+            X_grid, Y_grid = np.meshgrid(X_grid_margin, Y_grid_margin)
+
+            print "grid shapes", X_grid_margin.shape, Y_grid_margin.shape, X_grid.shape, Y_grid.shape
+
+            import pandas as pd
+            from pandas.tools.plotting import scatter_matrix
+            # df = pd.DataFrame(X, columns=['x1_t', 'x2_t', 'x1_tptau', 'x2_tptau', 'u_t'])
+            scatter_data_raw = np.hstack((error_grid.T, pred))
+            print "scatter_data_raw", scatter_data_raw.shape
+            
+            df = pd.DataFrame(scatter_data_raw, columns=["x_%d" % i for i in range(scatter_data_raw.shape[1])])
+            scatter_matrix(df, alpha=0.2, figsize=(10, 10), diagonal='kde')
+            pl.show()
+
         # pl.subplot(121)
         # # pl.scatter(X_red[:,0], X_red[:,1])
         # pl.scatter(X_red[:,0], X_red[:,1])
