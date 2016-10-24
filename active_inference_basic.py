@@ -205,21 +205,26 @@ class ActiveInference(object):
     ################################################################################
     def map_model_type03_goal_prediction_error(self):
         """plot model output over model input sweep"""
+        from mpl_toolkits.mplot3d import Axes3D
         doplot_scattermatrix = False
         
         # sweep error and record output
         # ERROR =
+        # meshgrid resolution
         numgrid = 5
-        
+
+        # linear axes
         x_ = np.linspace(-1., 1., numgrid)
         y_ = np.linspace(-1., 1., numgrid)
         z_ = np.linspace(-1., 1., numgrid)
 
+        # meshgrid from axes and resolution
         x, y, z = np.meshgrid(x_, y_, z_, indexing='ij')
         print "x.shape", x.shape
         print "x", x.flatten()
         print "y", y.flatten()
         print "z", z.flatten()
+        # combined grid
         error_grid = np.vstack((x.flatten(), y.flatten(), z.flatten()))
 
         # draw 5 different current state / goal configurations
@@ -235,10 +240,45 @@ class ActiveInference(object):
             X_accum.append(X)
 
         X_accum = np.array(X_accum)
+        ref1 = X_accum[0].copy()
+        print "ref1.shape", ref1.shape
         X_accum = X_accum.reshape((X_accum.shape[0] * X_accum.shape[1], X_accum.shape[2]))
+        ref2 = X_accum[:125].copy()
+        print "ref2.shape", ref2.shape
+        print "ref1 == ref2?", np.all(ref1 == ref2)
         print "X_accum.shape", X_accum.shape
         X = X_accum
-        
+        pred = self.mdl.predict(X)
+        print "pred.shape", pred.shape
+
+        # 3d scatter
+        pl.ioff()
+        fig = pl.figure()
+        cols = ["k", "r", "b", "g", "y", "c", "m"]
+        axs = [None for i in range(numgrid)]
+        for i in range(numgrid):
+            print "grid #%d" % i
+            sl = slice(i * (numgrid**3), (i+1) * (numgrid**3))
+            of = 0 # (i*2)
+            axs[i] = fig.add_subplot(1, numgrid, i+1, projection='3d')
+            print "sl", sl, "of", of, "ax", axs[i], error_grid.shape
+            # axs[i].scatter3D(error_grid.T[sl,0] + of, error_grid.T[sl,1], error_grid.T[sl,2], c=cols[i])
+            # axs[i].scatter3D(X_accum[sl,0] + of, X_accum[sl,1], X_accum[sl,2], c=cols[i])
+            # axs[i].set_title("GOAL = %s, state = %s" % (X[i*125,:3], X[i*125,3:]))
+            # axs[i].set_title("state/GOAL error = %s" % (X[i*125,3:] - X[i*125,:3]))
+            axs[i].set_title("GOAL = %s" % (X[i*125,:3]), fontsize=8)
+            axs[i].scatter3D(pred[sl,0] + of, pred[sl,1], pred[sl,2], c=cols[i])
+            # axs[i].scatter(error_grid.T[sl,0] + of, error_grid.T[sl,1], c=cols[i])
+            axs[i].set_aspect(1.0)
+            axs[i].set_xlabel("d1")
+            axs[i].set_ylabel("d2")
+            axs[i].set_zlabel("d3")
+            
+            # pl.subplot(1, numgrid, i+1)
+            # pl.scatter(error_grid.T[sl,0] + of, error_grid.T[sl,1], c=cols[i])
+            
+        pl.show()
+
         # # error_grid = np.concatenate((x, y, z)) # .reshape((numgrid, numgrid, numgrid))
         # print "error_grid", error_grid.shape, error_grid[:]
                 
@@ -305,27 +345,31 @@ class ActiveInference(object):
         # # pl.scatter(X_red[:,0], X_red[:,1], color=pred_red)
         # pl.show()
 
-        ################################################################################
+        ############################################################################
         # plot type 2: hexbin
 
-        ################################################################################
+        ############################################################################
         # plot type 3: pcolormesh, using dimstack
         from smp.dimstack import dimensional_stacking
+        # we have 4 axes with 5 steps of variation: goal, e1, e2, e3
+        # we have 3 axes with 5**4 responses (function values)
+        
         # pl.pcolormesh(X_red[:,0], X_red[:,1], pred_red)
         # A = np.hstack((X, pred[:,[0, 1]]))
         # (5, 5, 5 Goals, 5, 5, 5, errors, 5, 5, 5, preds) z.shape = (5, 5, 5, 5)
         vmin, vmax = np.min(pred), np.max(pred)
-        for i in range(3):
-            pl.subplot(3, 1, i+1)
+        for i in range(pred.shape[1]):
+            pl.subplot(1, 3, i+1)
+            # p1 = pred[:,i].reshape((numgrid, numgrid, numgrid, numgrid))
             p1 = pred[:,i].reshape((numgrid, numgrid, numgrid, numgrid))
             d1_stacked = dimensional_stacking(p1, [0, 1], [2, 3])
             pl.pcolormesh(d1_stacked, vmin=vmin, vmax=vmax)
             pl.gca().set_aspect(1.0)
             if i == 2:
-                pl.colorbar(orientation="horizontal")
+                pl.colorbar(orientation="vertical")
         pl.show()
 
-        ################################################################################
+        ############################################################################
         # plot type 4: scattermatrix
         if doplot_scattermatrix:
             X_grid_margin = np.linspace(np.min(X_red[:,0]), np.max(X_red[:,0]), numgrid)
