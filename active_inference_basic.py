@@ -240,18 +240,43 @@ class ActiveInference(object):
             X_accum.append(X)
 
         X_accum = np.array(X_accum)
-        ref1 = X_accum[0].copy()
-        print "ref1.shape", ref1.shape
+        # ref1 = X_accum[0].copy()
+        # print "ref1.shape", ref1.shape
         X_accum = X_accum.reshape((X_accum.shape[0] * X_accum.shape[1], X_accum.shape[2]))
-        ref2 = X_accum[:125].copy()
-        print "ref2.shape", ref2.shape
-        print "ref1 == ref2?", np.all(ref1 == ref2)
+        # ref2 = X_accum[:125].copy()
+        # print "ref2.shape", ref2.shape
+        # print "ref1 == ref2?", np.all(ref1 == ref2)
         print "X_accum.shape", X_accum.shape
         X = X_accum
         pred = self.mdl.predict(X)
         print "pred.shape", pred.shape
+        # X's and pred's indices now mean: slowest: goal, e1, e2, fastest: e3
 
-        # 3d scatter
+        ############################################################
+        # quiver matrix
+        pl.ioff()
+        numout = 3
+        numoutkombi = [[0, 1], [0, 2], [1, 2]]
+        for i in range(numgrid):
+            curdata  = pred[i*25:(i+1)*25].reshape((numgrid, numgrid, -1))
+            curgoal  = X_accum[i*25:(i+1)*25].reshape((numgrid, numgrid, -1))
+            # print "curgoal.shape", curgoal.shape
+            # curerror = X_accum[i*25:(i+1)*25].reshape((numgrid, numgrid, -1))
+            for j in range(numout):
+                pl.subplot(numgrid, numout, (i*numout) + j + 1)
+                i1 = numoutkombi[j][0]
+                i2 = numoutkombi[j][1]
+                pl.quiver(
+                    curgoal[:,:,i1+3], curgoal[:,:,i2+3],
+                    curdata[:,:,i1],  curdata[:,:,i2]
+                    )
+                pl.plot([curgoal[0, 0, i1]], [curgoal[0, 0, i2]], "ro")
+        pl.show()
+        sys.exit()
+
+        
+        ############################################################
+        # 3D scatter
         pl.ioff()
         fig = pl.figure()
         cols = ["k", "r", "b", "g", "y", "c", "m"]
@@ -278,6 +303,10 @@ class ActiveInference(object):
             # pl.scatter(error_grid.T[sl,0] + of, error_grid.T[sl,1], c=cols[i])
             
         pl.show()
+
+        # scatterplot nd
+        # historgram  nd
+        # draw a vectorfield?
 
         # # error_grid = np.concatenate((x, y, z)) # .reshape((numgrid, numgrid, numgrid))
         # print "error_grid", error_grid.shape, error_grid[:]
@@ -351,6 +380,7 @@ class ActiveInference(object):
         ############################################################################
         # plot type 3: pcolormesh, using dimstack
         from smp.dimstack import dimensional_stacking
+        from smp.smp_plot import resize_panel_vert, resize_panel_horiz, put_legend_out_right, put_legend_out_top
         # we have 4 axes with 5 steps of variation: goal, e1, e2, e3
         # we have 3 axes with 5**4 responses (function values)
         
@@ -362,11 +392,13 @@ class ActiveInference(object):
             pl.subplot(1, 3, i+1)
             # p1 = pred[:,i].reshape((numgrid, numgrid, numgrid, numgrid))
             p1 = pred[:,i].reshape((numgrid, numgrid, numgrid, numgrid))
-            d1_stacked = dimensional_stacking(p1, [0, 1], [2, 3])
+            d1_stacked = dimensional_stacking(p1, [1,0 ], [3, 2])
             pl.pcolormesh(d1_stacked, vmin=vmin, vmax=vmax)
             pl.gca().set_aspect(1.0)
-            if i == 2:
-                pl.colorbar(orientation="vertical")
+            # if i == (pred.shape[1]/2):
+            pl.colorbar(orientation="horizontal") #, use_gridspec=True)
+            # resize_panel_horiz(resize_by = 0.8)
+            # resize_panel_vert(resize_by = 0.8)
         pl.show()
 
         ############################################################################
