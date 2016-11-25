@@ -272,7 +272,7 @@ class ActiveInference(object):
                     )
                 pl.plot([curgoal[0, 0, i1]], [curgoal[0, 0, i2]], "ro")
         pl.show()
-        sys.exit()
+        # sys.exit()
 
         
         ############################################################
