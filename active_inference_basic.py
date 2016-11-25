@@ -1,3 +1,4 @@
+
 import argparse, cPickle, os
 import numpy as np
 import pylab as pl
@@ -220,10 +221,10 @@ class ActiveInference(object):
 
         # meshgrid from axes and resolution
         x, y, z = np.meshgrid(x_, y_, z_, indexing='ij')
-        print "x.shape", x.shape
-        print "x", x.flatten()
-        print "y", y.flatten()
-        print "z", z.flatten()
+        # print "x.shape", x.shape
+        # print "x", x.flatten()
+        # print "y", y.flatten()
+        # print "z", z.flatten()
         # combined grid
         error_grid = np.vstack((x.flatten(), y.flatten(), z.flatten()))
 
@@ -235,7 +236,7 @@ class ActiveInference(object):
             # draw random goal and keep it fixed
             self.goal = self.environment.compute_motor_command(np.random.uniform(-1.0, 1.0, (1, self.environment.conf.m_ndims)))
             # self.goal = np.random.uniform(self.environment.conf.m_mins, self.environment.conf.m_maxs, (1, self.environment.conf.m_ndims))
-            GOALS = np.repeat(self.goal, error_grid.shape[1], axis = 0)
+            GOALS = np.repeat(self.goal, error_grid.shape[1], axis = 0) # as many goals as error components
             X = np.hstack((GOALS, error_grid.T))
             X_accum.append(X)
 
@@ -257,21 +258,41 @@ class ActiveInference(object):
         pl.ioff()
         numout = 3
         numoutkombi = [[0, 1], [0, 2], [1, 2]]
-        for i in range(numgrid):
-            curdata  = pred[i*25:(i+1)*25].reshape((numgrid, numgrid, -1))
-            curgoal  = X_accum[i*25:(i+1)*25].reshape((numgrid, numgrid, -1))
-            # print "curgoal.shape", curgoal.shape
-            # curerror = X_accum[i*25:(i+1)*25].reshape((numgrid, numgrid, -1))
-            for j in range(numout):
-                pl.subplot(numgrid, numout, (i*numout) + j + 1)
-                i1 = numoutkombi[j][0]
-                i2 = numoutkombi[j][1]
-                pl.quiver(
-                    curgoal[:,:,i1+3], curgoal[:,:,i2+3],
-                    curdata[:,:,i1],  curdata[:,:,i2]
-                    )
-                pl.plot([curgoal[0, 0, i1]], [curgoal[0, 0, i2]], "ro")
-        pl.show()
+        numoutmultf = [25, 5, 1]
+        numoutrange = [125, 25, 5]
+        # dim x dim matrix: looping over combinations of input and combinations of output
+        for i in range(numout): # looping over first error component
+        # for i in range(numgrid): # looping over first error component
+            dimsel = numoutkombi[i]
+            i1 = numoutkombi[i][0]
+            i2 = numoutkombi[i][1]
+            xidx = range(0, numoutrange[dimsel[0]], numoutmultf[dimsel[0]])
+            yidx = range(0, numoutrange[dimsel[1]], numoutmultf[dimsel[1]])
+            # curdata  = pred[i*25:(i+1)*25].reshape((numgrid, numgrid, -1))
+            curdata  = pred[xidx]
+            curgoal  = X_accum[0,:3]
+            # curgoal  = X_accum[i*25:(i+1)*25].reshape((numgrid, numgrid, -1))
+            print "curgoal.shape", curgoal.shape
+            curerror = X_accum[i*25:(i+1)*25].reshape((numgrid, numgrid, -1))
+            print "curerror.shape", curerror.shape
+            # for j in range(numout): # loop remaining error comps
+            # pl.subplot(numgrid, numout, (i*numout) + j + 1)
+            pl.subplot(numgrid, 1, i + 1)
+            # i1 = numoutkombi[j][0]
+            # i2 = numoutkombi[j][1]
+            # print "curerror[:,:,i1+3]", curerror[:,:,i1+3].shape
+            # pl.plot(curerror[:,:,i1+3], curerror[:,:,i2+3], "ko")
+            # pl.show()
+            # xidx = np.range(0, )
+            # yidx
+            pl.quiver(
+                # curerror[:,:,i1+3], curerror[:,:,i2+3],
+                curerror[:,:,4], curerror[:,:,5],
+                # curdata[:,:,i1],  curdata[:,:,i2]
+                curdata[:,:,1],  curdata[:,:,2]
+                )
+            pl.plot([curgoal[i1]], [curgoal[i2]], "ro")
+            pl.show()
         sys.exit()
 
         
