@@ -285,16 +285,16 @@ class ActiveInference(object):
             # pl.show()
             # xidx = np.range(0, )
             # yidx
+            print curerror.shape, curdata.shape
             pl.quiver(
                 # curerror[:,:,i1+3], curerror[:,:,i2+3],
                 curerror[:,:,4], curerror[:,:,5],
                 # curdata[:,:,i1],  curdata[:,:,i2]
-                curdata[:,:,1],  curdata[:,:,2]
+                curdata[:,1],  curdata[:,2]
                 )
             pl.plot([curgoal[i1]], [curgoal[i2]], "ro")
-            pl.show()
-        sys.exit()
-
+        pl.show()
+        # sys.exit()
         
         ############################################################
         # 3D scatter
@@ -675,7 +675,7 @@ class ActiveInference(object):
         # self.S_ext_ = np.zeros((self.numsteps, ext_dim))
 
 
-        # 1. we learn stuff in proprioceptive state                
+        # 1. we learn stuff in proprioceptive space
         for i in range(0, self.numsteps):
             X = np.hstack((self.goal, self.e_pred)) # model input: goal and prediction error
             # print "X.shape", X.shape
