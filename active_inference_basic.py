@@ -28,6 +28,8 @@ try:
 except ImportError, e:
     print "Couldn't import pypr.clustering.gmm", e
     
+# TODO: variant 0 and 1: multiply error with (the sign of) local gradient of the function you're modelling for non-monotonic cases?
+#       need to plot behaviour for non-invertible functions
 # TODO: make custom models: do incremental fit and store history for
 #                     learners that need it: knn, soesgp, FORCE, ...
 # TODO: watch pred_error, if keeps increasing invert (or model) sign relation
@@ -53,6 +55,7 @@ class ActiveInferenceExperiment(object):
                  goal_sample_interval = 50):
         self.mode = mode
         self.model = model
+
         self.mdl_pkl = "mdl.bin"
 
         # experiment settings
@@ -887,7 +890,6 @@ class ActiveInferenceExperiment(object):
 
         # FIXME: merge this and goal pred error into common sm-loop structure with different hooks coding for
         # the marco-model itself
-        # FIXME: this and goal pred error: multiply error with (the sign of) local gradient of the function you're modelling?
                 
         for i in range(self.numsteps):
             

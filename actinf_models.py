@@ -213,12 +213,13 @@ class ActInfGMM(ActInfModel):
         self.Xy = np.zeros((1, self.idim))
         # fitting configuration
         self.fit_interval = 100
+        self.fitted =  False
 
     def fit(self, X, y):
         """single step fit: X, y are single patterns"""
         if X.shape[0] == 1:
             # single step update, add to internal data and refit if length matches update intervale
-            self.Xy_.append(np.hstack(X, y))
+            self.Xy_.append(np.hstack((X, y)))
             if len(self.Xy_) % self.fit_interval == 0:
                 self.fit_batch(np.asarray(self.Xy_))
         else:
@@ -237,6 +238,7 @@ class ActInfGMM(ActInfModel):
         # fit gmm
         self.cen_lst, self.cov_lst, self.p_k, self.logL = gmm.em_gm(self.Xy, K = 10, max_iter = 1000,
                                                                     verbose = False, iter_call = None)
+        self.fitted =  True
         print("%s.fit Log likelihood (how well the data fits the model) = %f" % (self.__class__.__name__, self.logL))
 
     def predict(self, X):
@@ -244,6 +246,8 @@ class ActInfGMM(ActInfModel):
 
     def sample(self, X):
         """sample from the model with conditioning single input pattern X"""
+        if not self.fitted:
+            return np.zeros((3,1))
         cond = X
         (cen_con, cov_con, new_p_k) = gmm.cond_dist(cond, self.cen_lst, self.cov_lst, self.p_k)
         return gmm.sample_gaussian_mixture(cen_con, cov_con, new_p_k, samples = 1)
