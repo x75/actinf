@@ -1,6 +1,7 @@
 from __future__ import print_function
 
 import numpy as np
+import pylab as pl
 
 from sklearn.neighbors import KNeighborsRegressor
 
@@ -217,10 +218,14 @@ class ActInfGMM(ActInfModel):
 
     def fit(self, X, y):
         """single step fit: X, y are single patterns"""
+        # print(X.shape, y.shape)
         if X.shape[0] == 1:
             # single step update, add to internal data and refit if length matches update intervale
-            self.Xy_.append(np.hstack((X, y)))
+            self.Xy_.append(np.hstack((X[0], y[0])))
             if len(self.Xy_) % self.fit_interval == 0:
+                # print("len(Xy_)", len(self.Xy_), self.Xy_[99])
+                # pl.plot(self.Xy_)
+                # pl.show()
                 self.fit_batch(np.asarray(self.Xy_))
         else:
             # batch fit, just fit mode to the input data
@@ -247,10 +252,18 @@ class ActInfGMM(ActInfModel):
     def sample(self, X):
         """sample from the model with conditioning single input pattern X"""
         if not self.fitted:
-            return np.zeros((3,1))
-        cond = X
+            # return np.zeros((3,1))
+            return np.random.uniform(-0.1, 0.1, (1, 3)) # FIXME hardcoded shape
+        # print("X.shape", X.shape, len(X.shape))
+        if len(X.shape) > 1:
+            cond = X[:,0]
+        else:
+            cond = X
+        print("cond.shape", cond.shape)
         (cen_con, cov_con, new_p_k) = gmm.cond_dist(cond, self.cen_lst, self.cov_lst, self.p_k)
-        return gmm.sample_gaussian_mixture(cen_con, cov_con, new_p_k, samples = 1)
+        cond_sample = gmm.sample_gaussian_mixture(cen_con, cov_con, new_p_k, samples = 1)
+        print("%s.sample: cond_sample.shape = %s" % (self.__class__.__name__, cond_sample.shape))
+        return cond_sample
         
     def sample_batch(self, X, cond_dims = [0], out_dims = [1], resample_interval = 1):
         """sample from the model with conditioning batch input X"""
