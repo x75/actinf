@@ -14,7 +14,7 @@ from explauto.environment.pointmass import PointmassEnvironment
 
 from utils.functions import gaussian
 
-from actinf_models import ActInfKNN, ActInfGMM
+from actinf_models import ActInfKNN, ActInfGMM, ActInfHebbianSOM
 
 try:
     from actinf_models import ActInfSOESGP, ActInfSTORKGP
@@ -27,14 +27,15 @@ try:
     import pypr.clustering.gmm as gmm
 except ImportError, e:
     print "Couldn't import pypr.clustering.gmm", e
-    
+
+# TODO: modify this code to use the GMM model from actinf_models.py
 # TODO: variant 0 and 1: multiply error with (the sign of) local gradient of the function you're modelling for non-monotonic cases?
 #       need to plot behaviour for non-invertible functions
 # TODO: make custom models: do incremental fit and store history for
 #                     learners that need it: knn, soesgp, FORCE, ...
 # TODO: watch pred_error, if keeps increasing invert (or model) sign relation
 # TODO: how does it react to changing transfer function, or rather, how
-#       irregularly can the transfer function be changed for a given learner
+#       irregularly can the transfer function be changed for a given learner: monotonicity and all above
 # TODO: compute PI,AIS,TE for goal->state, input->pred_error, s_pred->s to
 #       answer qu's like: how much is there to learn, how much is learned
 # TODO: pass pre-generated system into actinf machine, so we can use random robots with parameterized DoF, stiffness, force budget, DoF coupling coefficient
@@ -83,20 +84,21 @@ class ActiveInferenceExperiment(object):
         self.init_wiring(self.mode)
         self.init_model (self.model)
 
-        # sensory space mappings: this are used as data store for X,Y
+        # sensory space mappings: this are KNN models and just used as data store for X,Y
         self.e2p = ActInfKNN(self.ext_dim, self.odim)
         self.p2e = ActInfKNN(self.odim, self.ext_dim)
         
         mmdims = self.ext_dim + self.odim
-        self.mm = ActInfGMM(idim = mmdims, odim = mmdims)
+        # self.mm = ActInfGMM(idim = mmdims, odim = mmdims)
+        self.mm = ActInfHebbianSOM(idim = self.idim, odim = self.odim)
 
         ################################################################################
         # logging, configure logs dictionary and dict of logging variables
         self.logs = {}
         self.logging_vars = {
-            "S_prop_pred": {"col": self.environment.conf.m_ndims},
-            "E_prop_pred": {"col": self.environment.conf.m_ndims},
-            "M_prop_pred": {"col": self.environment.conf.m_ndims},
+            "S_prop_pred": {"col": self.odim},
+            "E_prop_pred": {"col": self.odim},
+            "M_prop_pred": {"col": self.odim},
             "goal_prop":   {"col": self.odim},
             "S_ext":       {"col": self.ext_dim},
             "E2P_pred":    {"col": self.odim},
@@ -118,12 +120,12 @@ class ActiveInferenceExperiment(object):
         ################################################################################
         # initialize vars with special needs
         self.goal_sample_interval = goal_sample_interval
-        self.goal_prop = np.random.uniform(self.environment.conf.m_mins, self.environment.conf.m_maxs, (1, self.environment.conf.m_ndims))
+        self.goal_prop = np.random.uniform(self.environment.conf.m_mins, self.environment.conf.m_maxs, (1, self.odim))
         self.goal_prop_tm1 = np.zeros_like(self.goal_prop)
-        # self.j = np.zeros((1, self.environment.conf.m_ndims))
-        self.M_prop_pred = np.zeros((1, self.environment.conf.m_ndims))
+        # self.j = np.zeros((1, self.odim))
+        self.M_prop_pred = np.zeros((1, self.odim))
         self.E_prop_pred = self.M_prop_pred - self.goal_prop
-        self.S_prop_pred = np.random.normal(0, 0.01, (1, self.environment.conf.m_ndims))
+        self.S_prop_pred = np.random.normal(0, 0.01, (1, self.odim))
 
     def init_wiring(self, mode):
         """initialize structure of experiment set by 'mode'"""
@@ -273,6 +275,9 @@ class ActiveInferenceExperiment(object):
     ################################################################################
     # proprio learning model variant 0
     def lh_learn_proprio_base_0(self, i):
+        assert self.goal_prop is not None, "self.goal_prop at iter = %d is None, should by ndarray" % i
+        assert self.goal_prop.shape == (1, self.odim), "self.goal_prop.shape is wrong, should be %s" % (1, self.odim)
+        
         # prepare model input X as goal and prediction error
         self.X_ = np.hstack((self.goal_prop, self.E_prop_pred))
 
@@ -364,13 +369,13 @@ class ActiveInferenceExperiment(object):
         self.e2p.fit(self.S_ext, self.M_prop_pred)
         self.p2e.fit(self.M_prop_pred.reshape((1, self.odim)), self.S_ext)
 
-        self.E_pred_e = self.S_ext - self.goal_ext
+        # self.E_pred_e = self.S_ext - self.goal_ext
 
     def lh_sample_discrete_uniform_goal(self, i):
         # discrete goal
         # hook: goal sampling
         if i % self.goal_sample_interval == 0:
-            self.goal_prop = np.random.uniform(self.environment.conf.m_mins, self.environment.conf.m_maxs, (1, self.environment.conf.m_ndims))
+            self.goal_prop = np.random.uniform(self.environment.conf.m_mins, self.environment.conf.m_maxs, (1, self.odim))
             print "new goal[%d] = %s" % (i, self.goal_prop)
             print "e_pred = %f" % (np.linalg.norm(self.E_prop_pred, 2))
 
@@ -381,7 +386,7 @@ class ActiveInferenceExperiment(object):
             f1 = 0.05 # float(i)/10000 + 0.01
             f2 = 0.08 # float(i)/10000 + 0.02
             f3 = 0.1 # float(i)/10000 + 0.03
-            self.goal_prop = np.sin(i * np.array([f1, f2, f3])).reshape((1, self.environment.conf.m_ndims))
+            self.goal_prop = np.sin(i * np.array([f1, f2, f3])).reshape((1, self.odim))
             print "new goal[%d] = %s" % (i, self.goal_prop)
             print "e_pred = %f" % (np.linalg.norm(self.E_prop_pred, 2))
             
@@ -390,30 +395,36 @@ class ActiveInferenceExperiment(object):
             # update e2p
             EP = np.hstack((np.asarray(self.e2p.X_), np.asarray(self.e2p.y_)))
             # print "EP[%d] = %s" % (i, EP)
-            EP = EP[10:]
+            EP = EP[10:] # knn bootstrapping creates additional datapoints
             if i % 100 == 0:
-                # re-fit gmm
-                self.cen_lst, self.cov_lst, self.p_k, self.logL = gmm.em_gm(EP, K = 10, max_iter = 1000,
-                                                        verbose = False, iter_call = None)
+                # re-fit gmm e2p
+                self.mm.fit(np.asarray(self.e2p.X_)[10:], np.asarray(self.e2p.y_)[10:])
+                
             # print "EP, cen_lst, cov_lst, p_k, logL", EP, self.cen_lst, self.cov_lst, self.p_k, self.logL
             ref_interval = 1
             self.cond = EP[(i+ref_interval)%EP.shape[0]] # X_[i,:3]
             self.cond[2:] = np.nan
             self.cond_ = np.random.uniform(-1, 1, (5, ))
+            # randomly fetch an exteroceptive state that we have seen already (= reachable)
             self.goal_ext = EP[np.random.choice(range(self.numsteps/2)),:2]
             self.cond_[:2] = self.goal_ext
             self.cond_[2:] = np.nan
             # print "self.cond", self.cond
             print "self.cond_", self.cond_
 
-            self.goal_prop = self.mm.sample(self.cond_)
+            # predict proprioceptive goal from exteroceptive one
+            if hasattr(self.mm, "cen_lst"):
+                self.goal_prop = self.mm.sample(self.cond_)
+            else:
+                self.goal_prop = self.mm.sample(self.goal_ext)
             
             # (cen_con, cov_con, new_p_k) = gmm.cond_dist(self.cond_, self.cen_lst, self.cov_lst, self.p_k)
             # self.goal_prop = gmm.sample_gaussian_mixture(cen_con, cov_con, new_p_k, samples = 1)
             
             # # discrete goal
-            # self.goal_prop = np.random.uniform(self.environment.conf.m_mins, self.environment.conf.m_maxs, (1, self.environment.conf.m_ndims))
-            print "new goal[%d] = %s" % (i, self.goal_prop)
+            # self.goal_prop = np.random.uniform(self.environment.conf.m_mins, self.environment.conf.m_maxs, (1, self.odim))
+            print "new goal_prop[%d] = %s" % (i, self.goal_prop)
+            print "    goal_ext[%d] = %s" % (i, self.goal_ext)
             print "e_pred = %f" % (np.linalg.norm(self.E_prop_pred, 2))
 
     def rh_learn_proprio_save(self):
@@ -464,11 +475,11 @@ class ActiveInferenceExperiment(object):
 
         self.mm.fit(np.asarray(self.e2p.X_)[10:], np.asarray(self.e2p.y_)[10:])
         
-        # fit gmm
-        self.cen_lst, self.cov_lst, self.p_k, self.logL = gmm.em_gm(self.logs["EP"], K = 10, max_iter = 1000,\
-            verbose = False, iter_call = None)
-        print "rh_e2p_fit gmm: Log likelihood (how well the data fits the model) = ", self.logL
-        # print "rh_e2p_fit gmm:", np.array(self.cen_lst).shape, np.array(self.cov_lst).shape, self.p_k.shape
+        # # fit gmm
+        # self.cen_lst, self.cov_lst, self.p_k, self.logL = gmm.em_gm(self.logs["EP"], K = 10, max_iter = 1000,\
+        #     verbose = False, iter_call = None)
+        # print "rh_e2p_fit gmm: Log likelihood (how well the data fits the model) = ", self.logL
+        # # print "rh_e2p_fit gmm:", np.array(self.cen_lst).shape, np.array(self.cov_lst).shape, self.p_k.shape
 
     def rh_e2p_sample(self):
         """sample the probabilistic e2p model for the entire dataset"""
@@ -476,9 +487,7 @@ class ActiveInferenceExperiment(object):
         if not self.attr_check(["cen_lst", "cov_lst", "p_k", "logL", "logs"]):
             return
 
-        self.y_samples, self.y_samples_ = self.mm.sample_batch(X = self.logs["EP"],
-                                                               cond_dims = [0, 1], out_dims = [2,3,4],
-                                                               resample_interval = self.goal_sample_interval)
+        self.y_samples, self.y_samples_ = self.mm.sample_batch(X = self.logs["EP"], cond_dims = [0, 1], out_dims = [2,3,4], resample_interval = self.goal_sample_interval)
                 
     def rh_e2p_sample_plot(self):
         # intro checks
@@ -572,7 +581,7 @@ class ActiveInferenceExperiment(object):
             self.lh_do_logging(i)
                 
             if i % 10 == 0:
-                self.goal_prop = np.random.uniform(-np.pi/2, np.pi/2, (1, self.environment.conf.m_ndims))
+                self.goal_prop = np.random.uniform(-np.pi/2, np.pi/2, (1, self.odim))
 
     def rh_state(self):
         """active inference / predictive coding: another early test, defunct too (type02)"""
@@ -619,7 +628,7 @@ class ActiveInferenceExperiment(object):
             
             if i % 50 == 0:
                 # goal = np.random.uniform(-np.pi/2, np.pi/2, (1, environment.conf.m_ndims))
-                self.goal_prop = np.random.uniform(self.environment.conf.m_mins, self.environment.conf.m_maxs, (1, self.environment.conf.m_ndims))
+                self.goal_prop = np.random.uniform(self.environment.conf.m_mins, self.environment.conf.m_maxs, (1, self.odim))
 
     ################################################################################
     def map_model_type03_goal_prediction_error(self):
@@ -653,10 +662,10 @@ class ActiveInferenceExperiment(object):
         X_accum = []
         for i in range(numgrid):
             # randomize initial position
-            self.M_prop_pred = self.environment.compute_motor_command(np.random.uniform(-1.0, 1.0, (1, self.environment.conf.m_ndims)))
+            self.M_prop_pred = self.environment.compute_motor_command(np.random.uniform(-1.0, 1.0, (1, self.odim)))
             # draw random goal and keep it fixed
-            self.goal_prop = self.environment.compute_motor_command(np.random.uniform(-1.0, 1.0, (1, self.environment.conf.m_ndims)))
-            # self.goal_prop = np.random.uniform(self.environment.conf.m_mins, self.environment.conf.m_maxs, (1, self.environment.conf.m_ndims))
+            self.goal_prop = self.environment.compute_motor_command(np.random.uniform(-1.0, 1.0, (1, self.odim)))
+            # self.goal_prop = np.random.uniform(self.environment.conf.m_mins, self.environment.conf.m_maxs, (1, self.odim))
             GOALS = np.repeat(self.goal_prop, error_grid.shape[1], axis = 0) # as many goals as error components
             if self.mdl.idim == 3:
                 X = GOALS
@@ -903,11 +912,11 @@ class ActiveInferenceExperiment(object):
             #     f1 = 0.05 # float(i)/10000 + 0.01
             #     f2 = 0.08 # float(i)/10000 + 0.02
             #     f3 = 0.1 # float(i)/10000 + 0.03
-            #     self.goal_prop = np.sin(i * np.array([f1, f2, f3])).reshape((1, self.environment.conf.m_ndims))
+            #     self.goal_prop = np.sin(i * np.array([f1, f2, f3])).reshape((1, self.odim))
                 
             # if i % 50 == 0:
             #     # discrete goal
-            #     self.goal_prop = np.random.uniform(self.environment.conf.m_mins, self.environment.conf.m_maxs, (1, self.environment.conf.m_ndims))
+            #     self.goal_prop = np.random.uniform(self.environment.conf.m_mins, self.environment.conf.m_maxs, (1, self.odim))
             #     print "g_[%d] = %s" % (i, self.goal_prop)
             #     print "e_pred[%d] = %f" % (i-1, np.linalg.norm(self.E_prop_pred, 2))
 
@@ -1031,6 +1040,7 @@ class ActiveInferenceExperiment(object):
         pl.subplot(511)
         pl.title("Proprioceptive goal")
         pl.plot(self.logs["goal_prop"], "-x")
+        # pl.plot(self.logs["E2P_pred"], "-x")
         
         pl.subplot(512)
         pl.title("Proprioceptive prediction error")

@@ -416,7 +416,7 @@ def main_kohonen(args):
                 # clip p_bar positive             
                 # p_bar = np.clip(p_bar, 0, np.inf)
     
-                # compute prediction error data induced activity minus prediction
+                # compute prediction error: data induced activity - prediction
                 z_err = p_ - p_bar
                 # z_err = p_bar - p_
                 z_err_norm = np.linalg.norm(z_err, 2)

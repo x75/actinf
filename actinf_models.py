@@ -21,8 +21,10 @@ import numpy as np
 import pylab as pl
 import cPickle
 
+# KNN
 from sklearn.neighbors import KNeighborsRegressor
 
+# Online Gaussian Processes
 try:
     from otl_oesgp import OESGP
     from otl_storkgp import STORKGP
@@ -31,11 +33,19 @@ except ImportError, e:
     print("couldn't import online GP models:", e)
     HAVE_SOESGP = False
 
+# Gaussian mixtures
 try:
     import pypr.clustering.gmm as gmm
 except ImportError, e:
     print("Couldn't import pypr.clustering.gmm", e)
 
+# hebbsom
+try:
+    from kohonen.kohonen import Map, Parameters, ExponentialTimeseries, ConstantTimeseries
+    from kohonen.kohonen import Gas, GrowingGas, GrowingGasParameters, Filter
+except ImportError, e:
+    print("Couldn't import lmjohns3's kohonon SOM lib", e)
+    
 class ActInfModel(object):
     """Base class for active inference function approximators / regressors"""
     def __init__(self, idim = 1, odim = 1):
@@ -369,14 +379,233 @@ class ActInfHebbianSOM(ActInfModel):
     def __init__(self, idim = 1, odim = 1):
         ActInfModel.__init__(self, idim, odim)
 
+        # SOMs trained?
+        self.soms_fitted = False
+        
+        # learning rate proxy
+        self.ET = ExponentialTimeseries
+        
+        self.mapsize = 10
+        # FIXME: make neighborhood_size decrease with time
+        
+        # SOM exteroceptive stimuli 2D input
+        self.kw_e = self.kwargs(shape = (self.mapsize, self.mapsize), dimension = self.idim, lr_init = 0.5, neighborhood_size = 0.6)
+        self.som_e = Map(Parameters(**self.kw_e))
 
+        # SOM proprioceptive stimuli 3D input
+        self.kw_p = self.kwargs(shape = (int(self.mapsize * 1.5), int(self.mapsize * 1.5)), dimension = self.odim, lr_init = 0.5, neighborhood_size = 0.7)
+        self.som_p = Map(Parameters(**self.kw_p))
+
+        # FIXME: there was a nice trick for node distribution init in _some_ recently added paper
+
+        # create "filter" using existing SOM_e, filter computes activation on distance
+        self.filter_e = Filter(self.som_e, history=lambda: 0.0)
+        self.filter_e.reset()
+
+        # kw_f_p = kwargs(shape = (mapsize * 3, mapsize * 3), dimension = 3, neighborhood_size = 0.5, lr_init = 0.1)
+        # filter_p = Filter(Map(Parameters(**kw_f_p)), history=lambda: 0.01)
+        
+        # create "filter" using existing SOM_p, filter computes activation on distance
+        self.filter_p = Filter(self.som_p, history=lambda: 0.0)
+        self.filter_p.reset()
+
+        # Hebbian links
+        # hebblink_som    = np.random.uniform(-1e-4, 1e-4, (np.prod(som_e._shape), np.prod(som_p._shape)))
+        # hebblink_filter = np.random.uniform(-1e-4, 1e-4, (np.prod(filter_e.map._shape), np.prod(filter_p.map._shape)))
+        self.hebblink_som    = np.zeros((np.prod(self.som_e._shape), np.prod(self.som_p._shape)))
+        self.hebblink_filter = np.zeros((np.prod(self.filter_e.map._shape), np.prod(self.filter_p.map._shape)))
+        self.hebblink_use_activity = True # use activation or distance
+
+    # SOM argument dict
+    def kwargs(self, shape=(10, 10), z=0.001, dimension=2, lr_init = 1.0, neighborhood_size = 1):
+        return dict(dimension=dimension,
+                    shape=shape,
+                    neighborhood_size = neighborhood_size,
+                    learning_rate=self.ET(-1e-4, lr_init, 0.01),
+                    noise_variance=z)
+
+    def fit_soms(self, X, y):
+        print("%s.fit_soms fitting X = %s, y = %s" % (self.__class__.__name__, X.shape, y.shape))
+        # if X.shape[0] != 1, r
+        # e = EP[i,:dim_e]
+        # p = EP[i,dim_e:]
+
+        # don't learn twice
+        # som_e.learn(e)
+        # som_p.learn(p)
+        # TODO for j in numepisodes
+        for i in range(X.shape[0]):
+            # print("%s.fit_soms X, y", X[i], y[i])
+            self.filter_e.learn(X[i])
+            self.filter_p.learn(y[i])
+        # print np.argmin(som_e.distances(e)) # , som_e.distances(e)
+
+    def fit_hebb(self, X, y):
+        print("%s.fit_hebb fitting X = %s, y = %s" % (self.__class__.__name__, X.shape, y.shape))
+        numepisodes_hebb = 1
+        numsteps = X.shape[0]
+        ################################################################################
+        # fix the SOMs with learning rate constant 0
+        CT = ConstantTimeseries
+        self.filter_e.map.learning_rate = CT(0.0)
+        self.filter_p.map.learning_rate = CT(0.0)
+
+        # Hebbian learning rate
+        if self.hebblink_use_activity:
+            et = ExponentialTimeseries(-1e-4, 0.8, 0.001)
+            # et = ConstantTimeseries(0.5)
+        else:
+            et = ConstantTimeseries(1e-5)
+        e_shape = (np.prod(self.filter_e.map._shape), 1)
+        p_shape = (np.prod(self.filter_p.map._shape), 1)
+
+        z_err_coef = 0.99
+        z_err_norm_ = 1
+        Z_err_norm  = np.zeros((numepisodes_hebb*numsteps,1))
+        Z_err_norm_ = np.zeros((numepisodes_hebb*numsteps,1))
+        W_norm      = np.zeros((numepisodes_hebb*numsteps,1))
+                
+        # TODO for j in numepisodes
+        j = 0
+        for i in range(X.shape[0]):
+            # just activate
+            self.filter_e.learn(X[i])
+            self.filter_p.learn(y[i])
+
+            # fetch data induced activity
+            if self.hebblink_use_activity:
+                p_    = self.filter_p.activity.reshape(p_shape)
+            else:
+                p_    = self.filter_p.distances(p).flatten().reshape(p_shape)
+    
+            # compute prediction for p using e activation and hebbian weights
+            if self.hebblink_use_activity:
+                p_bar = np.dot(self.hebblink_filter.T, self.filter_e.activity.reshape(e_shape))
+            else:
+                p_bar = np.dot(self.hebblink_filter.T, self.filter_e.distances(e).flatten().reshape(e_shape))
+
+            # inject activity prediction
+            p_bar_sum = p_bar.sum()
+            if p_bar_sum > 0:
+                p_bar_normed = p_bar / p_bar_sum
+            else:
+                p_bar_normed = np.zeros(p_bar.shape)
+        
+            # compute prediction error: data induced activity - prediction
+            z_err = p_ - p_bar
+            # z_err = p_bar - p_
+            z_err_norm = np.linalg.norm(z_err, 2)
+            if j == 0 and i == 0:
+                z_err_norm_ = z_err_norm
+            else:
+                z_err_norm_ = z_err_coef * z_err_norm_ + (1 - z_err_coef) * z_err_norm
+            w_norm = np.linalg.norm(self.hebblink_filter)
+
+            logidx = (j*numsteps) + i
+            Z_err_norm [logidx] = z_err_norm
+            Z_err_norm_[logidx] = z_err_norm_
+            W_norm     [logidx] = w_norm
+        
+            # z_err = p_bar - self.filter_p.activity.reshape(p_bar.shape)
+            # print "p_bar.shape", p_bar.shape
+            # print "self.filter_p.activity.flatten().shape", self.filter_p.activity.flatten().shape
+            if i % 100 == 0:
+                print("iter %d/%d: z_err.shape = %s, |z_err| = %f, |W| = %f, |p_bar_normed| = %f" % (logidx, (numepisodes_hebb*numsteps), z_err.shape, z_err_norm_, w_norm, np.linalg.norm(p_bar_normed)))
+                # print 
+        
+            # d_hebblink_filter = et() * np.outer(self.filter_e.activity.flatten(), self.filter_p.activity.flatten())
+            if self.hebblink_use_activity:
+                d_hebblink_filter = et() * np.outer(self.filter_e.activity.flatten(), z_err)
+            else:
+                d_hebblink_filter = et() * np.outer(self.filter_e.distances(e), z_err)
+            self.hebblink_filter += d_hebblink_filter
+                
+            
     def fit(self, X, y):
-        pass
+        print("%s.fit fitting X = %s, y = %s" % (self.__class__.__name__, X.shape, y.shape))
+        # if X,y have more than one row, train do batch training on SOMs and links
+        # otherwise do single step update on both or just the latter?
+        self.fit_soms(X, y)
+        self.fit_hebb(X, y)
 
     def predict(self, X):
         return self.sample(X)
 
     def sample(self, X):
-        pass
+        sampling_search_num = 100
 
+        e_shape = (np.prod(self.filter_e.map._shape), 1)
+        p_shape = (np.prod(self.filter_p.map._shape), 1)
 
+        P_ = np.zeros((X.shape[0], self.odim))    
+        E_ = np.zeros((X.shape[0], self.idim))
+        e2p_w_p_weights = self.filter_p.neuron(self.filter_p.flat_to_coords(self.filter_p.sample(1)[0]))
+        for i in range(X.shape[0]):
+            # e = EP[i,:dim_e]
+            # p = EP[i,dim_e:]
+            e = X[i]
+            # print np.argmin(som_e.distances(e)), som_e.distances(e)
+            self.filter_e.learn(e)
+            # print "self.filter_e.winner(e)", self.filter_e.winner(e)
+            # filter_p.learn(p)
+            # print "self.filter_e.activity.shape", self.filter_e.activity.shape
+            # import pdb; pdb.set_trace()
+            if self.hebblink_use_activity:
+                e2p_activation = np.dot(self.hebblink_filter.T, self.filter_e.activity.reshape((np.prod(self.filter_e.map._shape), 1)))
+                self.filter_p.activity = np.clip((e2p_activation / np.sum(e2p_activation)).reshape(self.filter_p.map._shape), 0, np.inf)
+            else:
+                e2p_activation = np.dot(self.hebblink_filter.T, self.filter_e.distances(e).flatten().reshape(e_shape))
+            # print "e2p_activation.shape, np.sum(e2p_activation)", e2p_activation.shape, np.sum(e2p_activation)
+            # print "self.filter_p.activity.shape", self.filter_p.activity.shape
+            # print "np.sum(self.filter_p.activity)", np.sum(self.filter_p.activity), (self.filter_p.activity >= 0).all()
+        
+            # self.filter_p.learn(p)
+            emode = 0 # 1, 2
+            if i % 1 == 0:
+                if emode == 0:
+                    e2p_w_p_weights_ = []
+                    for k in range(sampling_search_num):
+                        e2p_w_p_weights = self.filter_p.neuron(self.filter_p.flat_to_coords(self.filter_p.sample(1)[0]))
+                        e2p_w_p_weights_.append(e2p_w_p_weights)
+                    pred = np.array(e2p_w_p_weights_)
+                    # print "pred", pred
+
+                    # # if we can compare against something
+                    # pred_err = np.linalg.norm(pred - p, 2, axis=1)
+                    # # print "np.linalg.norm(e2p_w_p_weights - p, 2)", np.linalg.norm(e2p_w_p_weights - p, 2)
+                    # e2p_w_p = np.argmin(pred_err)
+
+                    # if not pick any
+                    e2p_w_p = np.random.choice(pred.shape[0])
+                    
+                    # print("pred_err", e2p_w_p, pred_err[e2p_w_p])
+                    e2p_w_p_weights = e2p_w_p_weights_[e2p_w_p]
+                elif emode == 1:
+                    if self.hebblink_use_activity:
+                        e2p_w_p = np.argmax(e2p_activation)
+                    else:
+                        e2p_w_p = np.argmin(e2p_activation)
+                    e2p_w_p_weights = self.filter_p.neuron(self.filter_p.flat_to_coords(e2p_w_p))
+                        
+                elif emode == 2:
+                    e2p_w_p = self.filter_p.winner(p)
+                    e2p_w_p_weights = self.filter_p.neuron(self.filter_p.flat_to_coords(e2p_w_p))
+            # P_[i] = e2p_w_p_weights
+            # E_[i] = environment.compute_sensori_effect(P_[i])
+            print("e2p shape", e2p_w_p_weights.shape)
+            return e2p_w_p_weights.reshape((1, self.odim))
+            
+            # print "e * hebb", e2p_w_p, e2p_w_p_weights
+        
+        
+    def sample_batch(self, X, cond_dims = [0], out_dims = [1], resample_interval = 1):
+        print("%s.sample_batch data X = %s" % (self.__class__.__name__, X))
+        sampmax = 20
+        numsamplesteps = X.shape[0]
+        odim = len(out_dims) # self.idim - X.shape[1]
+        self.y_sample_  = np.zeros((odim,))
+        self.y_sample   = np.zeros((odim,))
+        self.y_samples_ = np.zeros((sampmax, numsamplesteps, odim))
+        self.y_samples  = np.zeros((numsamplesteps, odim))
+        self.cond       = np.zeros_like(X[0])
+        return self.y_samples, self.y_samples_
