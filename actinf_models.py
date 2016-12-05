@@ -1,3 +1,20 @@
+"""Active inference project code
+
+This file contains the learners which can be used as adaptive models of
+sensorimotor contexts. For forward models there are
+ - nearest neighbour
+ - sparse online gaussian process models powered by Harold Soh's OTL library
+ - gaussian mixture model
+
+TODO:
+ - think about a common calling convention for all model types
+   - including 'predict_naive' and 'predict_full' methods that would capture
+     returning confidences about the current prediction
+   - other variables that might be used by the context to modulate
+     exploration, learning and behaviour
+   - disambiguate static and dynamic (conditional inference types) idim/odim
+"""
+
 from __future__ import print_function
 
 import numpy as np
@@ -346,3 +363,20 @@ class ActInfGMM(ActInfModel):
             self.y_samples[i] = self.y_sample_
             
         return self.y_samples, self.y_samples_
+
+
+class ActInfHebbianSOM(ActInfModel):
+    def __init__(self, idim = 1, odim = 1):
+        ActInfModel.__init__(self, idim, odim)
+
+
+    def fit(self, X, y):
+        pass
+
+    def predict(self, X):
+        return self.sample(X)
+
+    def sample(self, X):
+        pass
+
+

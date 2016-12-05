@@ -16,7 +16,7 @@ import pylab as pl
 dim_e = 2 # exteroceptive dim
 dim_p = 3 # proprioceptive dim
 
-def main_era():
+def main_era(args):
     from pyERA.som import Som
     from pyERA.hebbian import HebbianNetwork
     from pyERA.utils import ExponentialDecay
@@ -41,7 +41,7 @@ def main_era():
     radius_p = ExponentialDecay(starter_value=np.rint(som_p._matrix_size/3), decay_step=80, decay_rate=0.90, staircase=True)
 
     # data
-    EP = np.load("EP_1000.npy")
+    EP = np.load("data/simplearm_n1000/EP_1000.npy")
     
     for i in range(EP.shape[0]):
         # get data item
@@ -106,7 +106,7 @@ def main_era():
     pl.show()
     
         
-def main_neupy():
+def main_neupy(args):
     import matplotlib.pyplot as plt
 
     from neupy import algorithms, environment
@@ -117,7 +117,7 @@ def main_neupy():
 
     
     # data
-    EP = np.load("EP.npy")
+    EP = np.load("data/simplearm_n3000/EP.npy")
 
     input_data = EP[:,:2]
     
