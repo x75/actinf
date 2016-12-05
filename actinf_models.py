@@ -77,7 +77,9 @@ class ActInfKNN(ActInfModel):
         
         self.fwd.fit(self.X_, self.y_)
         
-
+################################################################################
+# ActiveInference OTL library based model, base class implementing predict,
+# predict_step (otl can't handle batches), fit, save and load methods
 class ActInfOTLModel(ActInfModel):
     """sparse online echo state gaussian process function approximator
     for active inference"""
@@ -153,6 +155,8 @@ class ActInfOTLModel(ActInfModel):
         # otlmodel_wrap.otlmodel = otlmodel_
         return otlmodel_wrap
 
+################################################################################
+# Sparse Online Echo State Gaussian Process (SOESGP) OTL library model
 class ActInfSOESGP(ActInfOTLModel):
     """sparse online echo state gaussian process function approximator
     for active inference"""
@@ -194,6 +198,8 @@ class ActInfSOESGP(ActInfOTLModel):
         print("im", type(im))
         self.otlmodel.setInputWeights(im.tolist())
 
+################################################################################
+# StorkGP OTL based model
 class ActInfSTORKGP(ActInfOTLModel):
     """sparse online echo state gaussian process function approximator
     for active inference"""
@@ -216,33 +222,6 @@ class ActInfSTORKGP(ActInfOTLModel):
                           1e-4,
                           100
                           )
-
-    # def predict(self, X):
-    #     X_ = X.flatten().tolist()
-    #     self.otlmodel.update(X_)
-    #     pred = []
-    #     var  = []
-    #     self.otlmodel.predict(pred, var)
-    #     # return np.zeros((1, self.odim))
-    #     return np.array(pred).reshape((1, self.odim))
-    
-    # def fit(self, X, y):
-    #     X_ = X.flatten().tolist()
-    #     # print("X.shape", X.shape, len(X_), X_)
-    #     self.otlmodel.update(X_)
-    #     # copy state into predefined structure
-    #     # self.otlmodel.getState(self.r)
-
-    #     pred = []
-    #     var  = []
-    #     self.otlmodel.predict(pred, var)
-
-    #     y_ = y.flatten().tolist()
-    #     self.otlmodel.train(y_)
-        
-    #     # self.otlmodel.predict(pred, var)
-    #     # print(pred, var)
-    #     # return np.array(pred).reshape((1, self.odim))
 
 ################################################################################
 # inference type multivalued models: GMM, SOMHebb, MDN
