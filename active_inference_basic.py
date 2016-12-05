@@ -239,7 +239,8 @@ class ActiveInferenceExperiment(object):
             
     def load_run_data(self):
         """load previous run stored as pickles"""
-        self.mdl  = cPickle.load(open(self.mdl_pkl, "rb"))
+        # self.mdl  = cPickle.load(open(self.mdl_pkl, "rb"))
+        self.mdl  = self.mdl.load(self.mdl_pkl)
         self.logs = cPickle.load(open("logs.bin", "rb"))
         self.e2p  = cPickle.load(open("e2p.bin", "rb"))
         self.p2e  = cPickle.load(open("p2e.bin", "rb"))
@@ -424,7 +425,8 @@ class ActiveInferenceExperiment(object):
         if os.path.exists(self.mdl_pkl):
             return
             
-        cPickle.dump(self.mdl, open(self.mdl_pkl, "wb"))
+        # cPickle.dump(self.mdl, open(self.mdl_pkl, "wb"))
+        self.mdl.save(self.mdl_pkl)
 
         # convert to numpy array
         self.logs["X__"] = np.asarray(self.logs["X_"])
@@ -671,6 +673,7 @@ class ActiveInferenceExperiment(object):
         # print "ref1 == ref2?", np.all(ref1 == ref2)
         print "X_accum.shape", X_accum.shape
         X = X_accum
+        print "trying a predict"
         pred = self.mdl.predict(X)
         print "pred.shape", pred.shape
         # X's and pred's indices now mean: slowest: goal, e1, e2, fastest: e3

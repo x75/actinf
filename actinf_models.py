@@ -2,6 +2,7 @@ from __future__ import print_function
 
 import numpy as np
 import pylab as pl
+import cPickle
 
 from sklearn.neighbors import KNeighborsRegressor
 
@@ -36,6 +37,12 @@ class ActInfModel(object):
         if self.model is None:
             print("%s.fit: implement me" % (self.__class__.__name__))
 
+    def save(self, filename):
+        cPickle.dump(self, open(filename, "wb"))
+
+    @classmethod
+    def load(cls, filename):
+        return cPickle.load(open(filename, "rb"))
 
 class ActInfKNN(ActInfModel):
     """k-NN function approximator for active inference"""
@@ -71,13 +78,89 @@ class ActInfKNN(ActInfModel):
         self.fwd.fit(self.X_, self.y_)
         
 
-class ActInfSOESGP(ActInfModel):
+class ActInfOTLModel(ActInfModel):
     """sparse online echo state gaussian process function approximator
     for active inference"""
     def __init__(self, idim = 1, odim = 1):
         ActInfModel.__init__(self, idim, odim)
+
+        self.otlmodel_type = "soesgp"
+        self.otlmodel = None
+
+    def predict(self, X):
+        if X.shape[0] > 1: # batch input
+            ret = np.zeros((X.shape[0], self.odim))
+            for i in range(X.shape[0]):
+                ret[i] = self.predict_step(X[i].flatten().tolist())
+            return ret
+        else:
+            X_ = X.flatten().tolist()
+            return self.predict_step(X_)
+
+    def predict_step(self, X_):
+        self.otlmodel.update(X_)
+        pred = []
+        var  = []
+        self.otlmodel.predict(pred, var)
+        # return np.zeros((1, self.odim))
+        return np.array(pred).reshape((1, self.odim))
         
-        self.oesgp = OESGP()
+    def fit(self, X, y):
+        X_ = X.flatten().tolist()
+        # print("X.shape", X.shape, len(X_), X_)
+        self.otlmodel.update(X_)
+        # copy state into predefined structure
+        # self.otlmodel.getState(self.r)
+
+        pred = []
+        var  = []
+        self.otlmodel.predict(pred, var)
+
+        y_ = y.flatten().tolist()
+        self.otlmodel.train(y_)
+        
+        # self.otlmodel.predict(pred, var)
+        # print(pred, var)
+        # return np.array(pred).reshape((1, self.odim))
+        
+    def save(self, filename):
+        otlmodel_ = self.otlmodel
+        self.otlmodel.save(filename + "_%s_model" % self.otlmodel_type)
+        print("otlmodel", otlmodel_)
+        self.otlmodel = None
+        print("otlmodel", otlmodel_)       
+        cPickle.dump(self, open(filename, "wb"))
+        self.otlmodel = otlmodel_
+        print("otlmodel", self.otlmodel)
+
+    @classmethod
+    def load(cls, filename):
+        # otlmodel_ = cls.otlmodel
+        otlmodel_wrap = cPickle.load(open(filename, "rb"))
+        print("%s.load cls.otlmodel filename = %s, otlmodel_wrap.otlmodel_type = %s" % (cls.__name__, filename, otlmodel_wrap.otlmodel_type))
+        if otlmodel_wrap.otlmodel_type == "soesgp":
+            otlmodel_cls = OESGP
+        elif otlmodel_wrap.otlmodel_type == "storkgp":
+            otlmodel_cls = STORKGP
+        else:
+            otlmodel_cls = OESGP
+            
+        otlmodel_wrap.otlmodel = otlmodel_cls()
+        print("otlmodel_wrap.otlmodel", otlmodel_wrap.otlmodel)
+        otlmodel_wrap.otlmodel.load(filename + "_%s_model" % otlmodel_wrap.otlmodel_type)
+        # print("otlmodel_wrap.otlmodel", dir(otlmodel_wrap.otlmodel))
+        # cls.bootstrap(otlmodel_wrap)
+        # otlmodel_wrap.otlmodel = otlmodel_
+        return otlmodel_wrap
+
+class ActInfSOESGP(ActInfOTLModel):
+    """sparse online echo state gaussian process function approximator
+    for active inference"""
+    def __init__(self, idim = 1, odim = 1):
+        ActInfOTLModel.__init__(self, idim, odim)
+        
+        self.otlmodel_type = "soesgp"
+        self.otlmodel = OESGP()
 
         self.res_size = 100 # 20
         self.input_weight = 1.0
@@ -102,56 +185,30 @@ class ActInfSOESGP(ActInfModel):
     
     def bootstrap(self):
         from smp.reservoirs import res_input_matrix_random_sparse
-        self.oesgp.init(self.idim, self.odim, self.res_size, self.input_weight,
+        self.otlmodel.init(self.idim, self.odim, self.res_size, self.input_weight,
                     self.output_feedback_weight, self.activation_function,
                     self.leak_rate, self.connectivity, self.spectral_radius,
                     False, self.kernel_params, self.noise, self.epsilon,
                     self.capacity, self.random_seed)
         im = res_input_matrix_random_sparse(self.idim, self.res_size, 0.2)
         print("im", type(im))
-        self.oesgp.setInputWeights(im.tolist())
+        self.otlmodel.setInputWeights(im.tolist())
 
-    def predict(self, X):
-        X_ = X.flatten().tolist()
-        self.oesgp.update(X_)
-        pred = []
-        var  = []
-        self.oesgp.predict(pred, var)
-        # return np.zeros((1, self.odim))
-        return np.array(pred).reshape((1, self.odim))
-    
-    def fit(self, X, y):
-        X_ = X.flatten().tolist()
-        # print("X.shape", X.shape, len(X_), X_)
-        self.oesgp.update(X_)
-        # copy state into predefined structure
-        # self.oesgp.getState(self.r)
-
-        pred = []
-        var  = []
-        self.oesgp.predict(pred, var)
-
-        y_ = y.flatten().tolist()
-        self.oesgp.train(y_)
-        
-        # self.oesgp.predict(pred, var)
-        # print(pred, var)
-        # return np.array(pred).reshape((1, self.odim))
-
-class ActInfSTORKGP(ActInfModel):
+class ActInfSTORKGP(ActInfOTLModel):
     """sparse online echo state gaussian process function approximator
     for active inference"""
     def __init__(self, idim = 1, odim = 1):
         ActInfModel.__init__(self, idim, odim)
         
-        self.storkgp = STORKGP()
+        self.otlmodel_type = "storkgp"
+        self.otlmodel = STORKGP()
 
         self.res_size = 100 # 20
         
         self.bootstrap()
     
     def bootstrap(self):
-        self.storkgp.init(self.idim, self.odim,
+        self.otlmodel.init(self.idim, self.odim,
                           self.res_size, # window size
                           0, # kernel type
                           [0.5, 0.99, 1.0, self.idim],
@@ -160,32 +217,32 @@ class ActInfSTORKGP(ActInfModel):
                           100
                           )
 
-    def predict(self, X):
-        X_ = X.flatten().tolist()
-        self.storkgp.update(X_)
-        pred = []
-        var  = []
-        self.storkgp.predict(pred, var)
-        # return np.zeros((1, self.odim))
-        return np.array(pred).reshape((1, self.odim))
+    # def predict(self, X):
+    #     X_ = X.flatten().tolist()
+    #     self.otlmodel.update(X_)
+    #     pred = []
+    #     var  = []
+    #     self.otlmodel.predict(pred, var)
+    #     # return np.zeros((1, self.odim))
+    #     return np.array(pred).reshape((1, self.odim))
     
-    def fit(self, X, y):
-        X_ = X.flatten().tolist()
-        # print("X.shape", X.shape, len(X_), X_)
-        self.storkgp.update(X_)
-        # copy state into predefined structure
-        # self.storkgp.getState(self.r)
+    # def fit(self, X, y):
+    #     X_ = X.flatten().tolist()
+    #     # print("X.shape", X.shape, len(X_), X_)
+    #     self.otlmodel.update(X_)
+    #     # copy state into predefined structure
+    #     # self.otlmodel.getState(self.r)
 
-        pred = []
-        var  = []
-        self.storkgp.predict(pred, var)
+    #     pred = []
+    #     var  = []
+    #     self.otlmodel.predict(pred, var)
 
-        y_ = y.flatten().tolist()
-        self.storkgp.train(y_)
+    #     y_ = y.flatten().tolist()
+    #     self.otlmodel.train(y_)
         
-        # self.storkgp.predict(pred, var)
-        # print(pred, var)
-        # return np.array(pred).reshape((1, self.odim))
+    #     # self.otlmodel.predict(pred, var)
+    #     # print(pred, var)
+    #     # return np.array(pred).reshape((1, self.odim))
 
 ################################################################################
 # inference type multivalued models: GMM, SOMHebb, MDN
