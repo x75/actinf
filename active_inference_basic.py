@@ -53,7 +53,7 @@ modes = [
 class ActiveInferenceExperiment(object):
     def __init__(self, mode = "type01_state_prediction_error",
                  model = "knn", numsteps = 1000, idim = None,
-                 goal_sample_interval = 50):
+                 goal_sample_interval = 50, e2pmodel = None):
         self.mode = mode
         self.model = model
 
@@ -87,11 +87,9 @@ class ActiveInferenceExperiment(object):
         # sensory space mappings: this are KNN models and just used as data store for X,Y
         self.e2p = ActInfKNN(self.ext_dim, self.odim)
         self.p2e = ActInfKNN(self.odim, self.ext_dim)
-        
-        mmdims = self.ext_dim + self.odim
-        # self.mm = ActInfGMM(idim = mmdims, odim = mmdims)
-        self.mm = ActInfHebbianSOM(idim = self.idim, odim = self.odim)
 
+        self.init_e2p(e2pmodel)
+                
         ################################################################################
         # logging, configure logs dictionary and dict of logging variables
         self.logs = {}
@@ -120,6 +118,7 @@ class ActiveInferenceExperiment(object):
         ################################################################################
         # initialize vars with special needs
         self.goal_sample_interval = goal_sample_interval
+        self.goal_sample_time     = 0
         self.goal_prop = np.random.uniform(self.environment.conf.m_mins, self.environment.conf.m_maxs, (1, self.odim))
         self.goal_prop_tm1 = np.zeros_like(self.goal_prop)
         # self.j = np.zeros((1, self.odim))
@@ -127,6 +126,15 @@ class ActiveInferenceExperiment(object):
         self.E_prop_pred = self.M_prop_pred - self.goal_prop
         self.S_prop_pred = np.random.normal(0, 0.01, (1, self.odim))
 
+    def init_e2p(self, e2pmodel):
+        mmdims = self.ext_dim + self.odim
+        if e2pmodel == "gmm":
+            self.mm = ActInfGMM(idim = mmdims, odim = mmdims)
+        elif e2pmodel == "som":
+            self.mm = ActInfHebbianSOM(idim = self.idim, odim = self.odim)
+        else:
+            print "unknown e2pmodel %s" % e2pmodel
+        
     def init_wiring(self, mode):
         """initialize structure of experiment set by 'mode'"""
         if mode == "type01_state_prediction_error":
@@ -287,7 +295,7 @@ class ActiveInferenceExperiment(object):
         # inverse model / motor primitive / reflex arc
         self.M_prop_pred = self.environment.compute_motor_command(self.S_prop_pred)
         # distort response
-        self.M_prop_pred = np.sin(self.M_prop_pred * np.pi) # * 1.333
+        # self.M_prop_pred = np.sin(self.M_prop_pred * np.pi) # * 1.333
         # self.M_prop_pred = np.exp(self.M_prop_pred) - 1.0 # * 1.333
         # self.M_prop_pred = (gaussian(0, 0.5, self.M_prop_pred) - 0.4) * 5
         
@@ -391,18 +399,22 @@ class ActiveInferenceExperiment(object):
             print "e_pred = %f" % (np.linalg.norm(self.E_prop_pred, 2))
             
     def sample_discrete_from_extero(self, i):
-        if i % self.goal_sample_interval == 0:
+        self.mm.fit(self.S_ext, self.M_prop_pred)
+        ext_err = np.sum(np.abs(self.goal_ext - self.S_ext))
+        if i % self.goal_sample_interval == 0 or \
+            ((i - self.goal_sample_time) > 5 and ext_err > 0.3):
             # update e2p
             EP = np.hstack((np.asarray(self.e2p.X_), np.asarray(self.e2p.y_)))
             # print "EP[%d] = %s" % (i, EP)
             EP = EP[10:] # knn bootstrapping creates additional datapoints
-            if i % 100 == 0:
-                # re-fit gmm e2p
-                self.mm.fit(np.asarray(self.e2p.X_)[10:], np.asarray(self.e2p.y_)[10:])
+            # if i % 100 == 0:
+            # re-fit gmm e2p
+            # self.mm.fit(np.asarray(self.e2p.X_)[10:], np.asarray(self.e2p.y_)[10:])
+            # self.mm.fit(np.asarray(self.e2p.X_)[10:], np.asarray(self.e2p.y_)[10:])
                 
             # print "EP, cen_lst, cov_lst, p_k, logL", EP, self.cen_lst, self.cov_lst, self.p_k, self.logL
             ref_interval = 1
-            self.cond = EP[(i+ref_interval)%EP.shape[0]] # X_[i,:3]
+            self.cond = EP[(i+ref_interval) % EP.shape[0]] # X_[i,:3]
             self.cond[2:] = np.nan
             self.cond_ = np.random.uniform(-1, 1, (5, ))
             # randomly fetch an exteroceptive state that we have seen already (= reachable)
@@ -410,14 +422,16 @@ class ActiveInferenceExperiment(object):
             self.cond_[:2] = self.goal_ext
             self.cond_[2:] = np.nan
             # print "self.cond", self.cond
-            print "self.cond_", self.cond_
+            # print "self.cond_", self.cond_
 
             # predict proprioceptive goal from exteroceptive one
             if hasattr(self.mm, "cen_lst"):
                 self.goal_prop = self.mm.sample(self.cond_)
             else:
                 self.goal_prop = self.mm.sample(self.goal_ext)
-            
+
+            self.goal_sample_time     = i
+                            
             # (cen_con, cov_con, new_p_k) = gmm.cond_dist(self.cond_, self.cen_lst, self.cov_lst, self.p_k)
             # self.goal_prop = gmm.sample_gaussian_mixture(cen_con, cov_con, new_p_k, samples = 1)
             
@@ -426,6 +440,7 @@ class ActiveInferenceExperiment(object):
             print "new goal_prop[%d] = %s" % (i, self.goal_prop)
             print "    goal_ext[%d] = %s" % (i, self.goal_ext)
             print "e_pred = %f" % (np.linalg.norm(self.E_prop_pred, 2))
+            print "ext_er = %f" % (ext_err)
 
     def rh_learn_proprio_save(self):
         """save data from proprio learning"""
@@ -461,6 +476,8 @@ class ActiveInferenceExperiment(object):
         # pl.show()
 
     def rh_e2p_fit(self):
+        """Initial fit of e2p map with a batch of data"""
+        
         # 2. now we learn e2p mapping (conditional joint density model for dealing with ambiguity)
         # ## prepare data
         if not self.attr_check(["logs", "e2p"]):
@@ -1037,28 +1054,33 @@ class ActiveInferenceExperiment(object):
         pl.ioff()
         pl.suptitle("Mode: %s using %s (X: FM input, state pred: FM output)" % (self.mode, self.model))
         
-        pl.subplot(511)
+        pl.subplot(611)
         pl.title("Proprioceptive goal")
         pl.plot(self.logs["goal_prop"], "-x")
         # pl.plot(self.logs["E2P_pred"], "-x")
         
-        pl.subplot(512)
+        pl.subplot(612)
         pl.title("Proprioceptive prediction error")
         # pl.plot(self.X__[10:,3:], "-x")
         # pl.plot(self.X__[:,3:], "-x")
         pl.plot(self.logs["E_prop_pred"], "-x")
         
-        pl.subplot(513)
+        pl.subplot(613)
         pl.title("Proprioceptive state prediction")
         pl.plot(self.logs["S_prop_pred"])
         
-        pl.subplot(514)
+        pl.subplot(614)
         pl.title("Proprioceptive prediction error (state - goal)")
         pl.plot(self.logs["E_prop_pred"])
         
-        pl.subplot(515)
+        pl.subplot(615)
         pl.title("Proprioceptive state")
         pl.plot(self.logs["M_prop_pred"])
+
+        pl.subplot(616)
+        pl.title("Exteroceptive state and goal")
+        pl.plot(self.logs["S_ext"])
+        pl.plot(self.logs["goal_ext"])
         
         pl.show()
 
@@ -1091,7 +1113,7 @@ def main(args):
         idim = None
         if args.mode.startswith("type03_1"):
             idim = 3
-        inf = ActiveInferenceExperiment(args.mode, args.model, args.numsteps, idim = idim)
+        inf = ActiveInferenceExperiment(args.mode, args.model, args.numsteps, idim = idim, e2pmodel = args.e2pmodel)
 
         inf.run()
 
@@ -1099,9 +1121,10 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("-m", "--mode", type=str, help="program execution mode, one of " + ", ".join(modes) + " [type01_state_prediction_error]", default="type04_ext_prop")
-    parser.add_argument("-md", "--model", type=str, help="learning machine [knn]", default="knn")
-    parser.add_argument("-n", "--numsteps", type=int, help="number of learning steps [1000]", default=1000)
+    parser.add_argument("-e2p", "--e2pmodel", type=str, help="extero to proprio mapping [gmm]", default="gmm")
+    parser.add_argument("-m",   "--mode",     type=str, help="program execution mode, one of " + ", ".join(modes) + " [type01_state_prediction_error]", default="type04_ext_prop")
+    parser.add_argument("-md",  "--model",    type=str, help="learning machine [knn]", default="knn")
+    parser.add_argument("-n",   "--numsteps", type=int, help="number of learning steps [1000]", default=1000)
     args = parser.parse_args()
 
     main(args)

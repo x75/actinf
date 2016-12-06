@@ -6,13 +6,13 @@ sensorimotor contexts. For forward models there are
  - sparse online gaussian process models powered by Harold Soh's OTL library
  - gaussian mixture model
 
-TODO:
- - think about a common calling convention for all model types
+TODO: think about a common calling convention for all model types
    - including 'predict_naive' and 'predict_full' methods that would capture
      returning confidences about the current prediction
    - other variables that might be used by the context to modulate
      exploration, learning and behaviour
    - disambiguate static and dynamic (conditional inference types) idim/odim
+TODO: consistency problem when sampling from probabilistic models (gmm, hebbsom, ...)
 """
 
 from __future__ import print_function
@@ -281,7 +281,7 @@ class ActInfGMM(ActInfModel):
 
     def fit(self, X, y):
         """single step fit: X, y are single patterns"""
-        # print(X.shape, y.shape)
+        # print("%s.fit" % (self.__class__.__name__), X.shape, y.shape)
         if X.shape[0] == 1:
             # single step update, add to internal data and refit if length matches update intervale
             self.Xy_.append(np.hstack((X[0], y[0])))
@@ -289,14 +289,17 @@ class ActInfGMM(ActInfModel):
                 # print("len(Xy_)", len(self.Xy_), self.Xy_[99])
                 # pl.plot(self.Xy_)
                 # pl.show()
-                self.fit_batch(np.asarray(self.Xy_))
+                self.Xy = np.asarray(self.Xy_)
+                self.fit_batch(self.Xy)
         else:
-            # batch fit, just fit mode to the input data
-            self.Xy = np.hstack((X, y))
+            # batch fit, just fit model to the input data batch
+            self.Xy_ += np.hstack((X, y)).tolist()
+            # self.Xy = np.hstack((X, y))
+            self.Xy  = np.asarray(self.Xy_)
             self.fit_batch(self.Xy)
         
     def fit_batch(self, Xy):
-        """fit the model"""
+        """Fit the GMM model with batch data"""
         # print("%s.fit X.shape = %s, y.shape = %s" % (self.__class__.__name__, X.shape, y.shape))
         # self.Xy = np.hstack((X[:,3:], y[:,:]))
         # self.Xy = np.hstack((X, y))
@@ -307,7 +310,7 @@ class ActInfGMM(ActInfModel):
         self.cen_lst, self.cov_lst, self.p_k, self.logL = gmm.em_gm(self.Xy, K = 10, max_iter = 1000,
                                                                     verbose = False, iter_call = None)
         self.fitted =  True
-        print("%s.fit Log likelihood (how well the data fits the model) = %f" % (self.__class__.__name__, self.logL))
+        print("%s.fit_batch Log likelihood (how well the data fits the model) = %f" % (self.__class__.__name__, self.logL))
 
     def predict(self, X):
         return self.sample(X)
@@ -316,13 +319,14 @@ class ActInfGMM(ActInfModel):
         """sample from the model with conditioning single input pattern X"""
         if not self.fitted:
             # return np.zeros((3,1))
+            # model has not been bootstrapped, return random goal
             return np.random.uniform(-0.1, 0.1, (1, 3)) # FIXME hardcoded shape
         # print("X.shape", X.shape, len(X.shape))
         if len(X.shape) > 1:
             cond = X[:,0]
         else:
             cond = X
-        print("cond.shape", cond.shape)
+        print("%s.sample: cond.shape = %s" % (self.__class__.__name__, cond.shape))
         (cen_con, cov_con, new_p_k) = gmm.cond_dist(cond, self.cen_lst, self.cov_lst, self.p_k)
         cond_sample = gmm.sample_gaussian_mixture(cen_con, cov_con, new_p_k, samples = 1)
         print("%s.sample: cond_sample.shape = %s" % (self.__class__.__name__, cond_sample.shape))
@@ -374,16 +378,17 @@ class ActInfGMM(ActInfModel):
             
         return self.y_samples, self.y_samples_
 
-
 class ActInfHebbianSOM(ActInfModel):
     def __init__(self, idim = 1, odim = 1):
         ActInfModel.__init__(self, idim, odim)
 
         # SOMs trained?
         self.soms_fitted = False
+        self.fitted = False
         
         # learning rate proxy
         self.ET = ExponentialTimeseries
+        self.CT = ConstantTimeseries
         
         self.mapsize = 10
         # FIXME: make neighborhood_size decrease with time
@@ -401,6 +406,7 @@ class ActInfHebbianSOM(ActInfModel):
         # create "filter" using existing SOM_e, filter computes activation on distance
         self.filter_e = Filter(self.som_e, history=lambda: 0.0)
         self.filter_e.reset()
+        self.filter_e_lr = self.filter_e.map._learning_rate
 
         # kw_f_p = kwargs(shape = (mapsize * 3, mapsize * 3), dimension = 3, neighborhood_size = 0.5, lr_init = 0.1)
         # filter_p = Filter(Map(Parameters(**kw_f_p)), history=lambda: 0.01)
@@ -408,6 +414,7 @@ class ActInfHebbianSOM(ActInfModel):
         # create "filter" using existing SOM_p, filter computes activation on distance
         self.filter_p = Filter(self.som_p, history=lambda: 0.0)
         self.filter_p.reset()
+        self.filter_p_lr = self.filter_p.map._learning_rate
 
         # Hebbian links
         # hebblink_som    = np.random.uniform(-1e-4, 1e-4, (np.prod(som_e._shape), np.prod(som_p._shape)))
@@ -415,6 +422,13 @@ class ActInfHebbianSOM(ActInfModel):
         self.hebblink_som    = np.zeros((np.prod(self.som_e._shape), np.prod(self.som_p._shape)))
         self.hebblink_filter = np.zeros((np.prod(self.filter_e.map._shape), np.prod(self.filter_p.map._shape)))
         self.hebblink_use_activity = True # use activation or distance
+        
+        # Hebbian learning rate
+        if self.hebblink_use_activity:
+            self.hebblink_et = ExponentialTimeseries(-1e-4, 0.8, 0.001)
+            # et = ConstantTimeseries(0.5)
+        else:
+            self.hebblink_et = ConstantTimeseries(1e-5)
 
     # SOM argument dict
     def kwargs(self, shape=(10, 10), z=0.001, dimension=2, lr_init = 1.0, neighborhood_size = 1):
@@ -425,37 +439,36 @@ class ActInfHebbianSOM(ActInfModel):
                     noise_variance=z)
 
     def fit_soms(self, X, y):
-        print("%s.fit_soms fitting X = %s, y = %s" % (self.__class__.__name__, X.shape, y.shape))
+        # print("%s.fit_soms fitting X = %s, y = %s" % (self.__class__.__name__, X.shape, y.shape))
         # if X.shape[0] != 1, r
         # e = EP[i,:dim_e]
         # p = EP[i,dim_e:]
+        
+        self.filter_e.map._learning_rate = self.filter_e_lr
+        self.filter_p.map._learning_rate = self.filter_p_lr
 
         # don't learn twice
         # som_e.learn(e)
         # som_p.learn(p)
         # TODO for j in numepisodes
         for i in range(X.shape[0]):
-            # print("%s.fit_soms X, y", X[i], y[i])
+            # print("%s.fit_soms X = %s, y = %s" % (self.__class__.__name__, X[i], y[i]))
             self.filter_e.learn(X[i])
             self.filter_p.learn(y[i])
         # print np.argmin(som_e.distances(e)) # , som_e.distances(e)
 
     def fit_hebb(self, X, y):
-        print("%s.fit_hebb fitting X = %s, y = %s" % (self.__class__.__name__, X.shape, y.shape))
+        # print("%s.fit_hebb fitting X = %s, y = %s" % (self.__class__.__name__, X.shape, y.shape))
         numepisodes_hebb = 1
         numsteps = X.shape[0]
         ################################################################################
         # fix the SOMs with learning rate constant 0
-        CT = ConstantTimeseries
-        self.filter_e.map.learning_rate = CT(0.0)
-        self.filter_p.map.learning_rate = CT(0.0)
+        self.filter_e_lr = self.filter_e.map._learning_rate
+        self.filter_p_lr = self.filter_p.map._learning_rate
+        # print("fit_hebb", self.filter_e.map._learning_rate)
+        self.filter_e.map._learning_rate = self.CT(0.0)
+        self.filter_p.map._learning_rate = self.CT(0.0)
 
-        # Hebbian learning rate
-        if self.hebblink_use_activity:
-            et = ExponentialTimeseries(-1e-4, 0.8, 0.001)
-            # et = ConstantTimeseries(0.5)
-        else:
-            et = ConstantTimeseries(1e-5)
         e_shape = (np.prod(self.filter_e.map._shape), 1)
         p_shape = (np.prod(self.filter_p.map._shape), 1)
 
@@ -509,24 +522,24 @@ class ActInfHebbianSOM(ActInfModel):
             # z_err = p_bar - self.filter_p.activity.reshape(p_bar.shape)
             # print "p_bar.shape", p_bar.shape
             # print "self.filter_p.activity.flatten().shape", self.filter_p.activity.flatten().shape
-            if i % 100 == 0:
-                print("iter %d/%d: z_err.shape = %s, |z_err| = %f, |W| = %f, |p_bar_normed| = %f" % (logidx, (numepisodes_hebb*numsteps), z_err.shape, z_err_norm_, w_norm, np.linalg.norm(p_bar_normed)))
-                # print 
+            
+            # if i % 100 == 0:
+            #     print("%s.fit_hebb: iter %d/%d: z_err.shape = %s, |z_err| = %f, |W| = %f, |p_bar_normed| = %f" % (self.__class__.__name__, logidx, (numepisodes_hebb*numsteps), z_err.shape, z_err_norm_, w_norm, np.linalg.norm(p_bar_normed)))
         
             # d_hebblink_filter = et() * np.outer(self.filter_e.activity.flatten(), self.filter_p.activity.flatten())
             if self.hebblink_use_activity:
-                d_hebblink_filter = et() * np.outer(self.filter_e.activity.flatten(), z_err)
+                d_hebblink_filter = self.hebblink_et() * np.outer(self.filter_e.activity.flatten(), z_err)
             else:
-                d_hebblink_filter = et() * np.outer(self.filter_e.distances(e), z_err)
+                d_hebblink_filter = self.hebblink_et() * np.outer(self.filter_e.distances(e), z_err)
             self.hebblink_filter += d_hebblink_filter
-                
             
     def fit(self, X, y):
-        print("%s.fit fitting X = %s, y = %s" % (self.__class__.__name__, X.shape, y.shape))
+        # print("%s.fit fitting X = %s, y = %s" % (self.__class__.__name__, X, y))
         # if X,y have more than one row, train do batch training on SOMs and links
         # otherwise do single step update on both or just the latter?
         self.fit_soms(X, y)
         self.fit_hebb(X, y)
+        self.fitted = True
 
     def predict(self, X):
         return self.sample(X)
@@ -537,7 +550,7 @@ class ActInfHebbianSOM(ActInfModel):
         e_shape = (np.prod(self.filter_e.map._shape), 1)
         p_shape = (np.prod(self.filter_p.map._shape), 1)
 
-        P_ = np.zeros((X.shape[0], self.odim))    
+        P_ = np.zeros((X.shape[0], self.odim))
         E_ = np.zeros((X.shape[0], self.idim))
         e2p_w_p_weights = self.filter_p.neuron(self.filter_p.flat_to_coords(self.filter_p.sample(1)[0]))
         for i in range(X.shape[0]):
@@ -560,7 +573,8 @@ class ActInfHebbianSOM(ActInfModel):
             # print "np.sum(self.filter_p.activity)", np.sum(self.filter_p.activity), (self.filter_p.activity >= 0).all()
         
             # self.filter_p.learn(p)
-            emode = 0 # 1, 2
+            # emodes: 0
+            emode = 1 # 1, 2
             if i % 1 == 0:
                 if emode == 0:
                     e2p_w_p_weights_ = []
@@ -608,4 +622,5 @@ class ActInfHebbianSOM(ActInfModel):
         self.y_samples_ = np.zeros((sampmax, numsamplesteps, odim))
         self.y_samples  = np.zeros((numsamplesteps, odim))
         self.cond       = np.zeros_like(X[0])
+        
         return self.y_samples, self.y_samples_
