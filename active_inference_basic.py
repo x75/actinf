@@ -402,7 +402,7 @@ class ActiveInferenceExperiment(object):
         self.mm.fit(self.S_ext, self.M_prop_pred)
         ext_err = np.sum(np.abs(self.goal_ext - self.S_ext))
         if i % self.goal_sample_interval == 0 or \
-            ((i - self.goal_sample_time) > 5 and ext_err > 0.3):
+            ((i - self.goal_sample_time) > 5 and ext_err > 0.0):
             # update e2p
             EP = np.hstack((np.asarray(self.e2p.X_), np.asarray(self.e2p.y_)))
             # print "EP[%d] = %s" % (i, EP)
@@ -490,6 +490,7 @@ class ActiveInferenceExperiment(object):
 
         # print "self.logs['X_']", self.logs["X_"]
 
+        print("%s.rh_e2p_fit batch fitting of e2p" % (self.__class__.__name__))
         self.mm.fit(np.asarray(self.e2p.X_)[10:], np.asarray(self.e2p.y_)[10:])
         
         # # fit gmm
@@ -1113,7 +1114,10 @@ def main(args):
         idim = None
         if args.mode.startswith("type03_1"):
             idim = 3
-        inf = ActiveInferenceExperiment(args.mode, args.model, args.numsteps, idim = idim, e2pmodel = args.e2pmodel)
+        inf = ActiveInferenceExperiment(args.mode, args.model, args.numsteps,
+                                        idim = idim,
+                                        goal_sample_interval = args.goal_sample_interval,
+                                        e2pmodel = args.e2pmodel)
 
         inf.run()
 
@@ -1121,10 +1125,11 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("-e2p", "--e2pmodel", type=str, help="extero to proprio mapping [gmm]", default="gmm")
-    parser.add_argument("-m",   "--mode",     type=str, help="program execution mode, one of " + ", ".join(modes) + " [type01_state_prediction_error]", default="type04_ext_prop")
-    parser.add_argument("-md",  "--model",    type=str, help="learning machine [knn]", default="knn")
-    parser.add_argument("-n",   "--numsteps", type=int, help="number of learning steps [1000]", default=1000)
+    parser.add_argument("-e2p", "--e2pmodel",             type=str, help="extero to proprio mapping [gmm]", default="gmm")
+    parser.add_argument("-gsi", "--goal_sample_interval", type=int, help="Interval at which to sample goals [50]", default=50)
+    parser.add_argument("-m",   "--mode",                 type=str, help="program execution mode, one of " + ", ".join(modes) + " [type01_state_prediction_error]", default="type04_ext_prop")
+    parser.add_argument("-md",  "--model",                type=str, help="learning machine [knn]", default="knn")
+    parser.add_argument("-n",   "--numsteps",             type=int, help="number of learning steps [1000]", default=1000)
     args = parser.parse_args()
 
     main(args)

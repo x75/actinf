@@ -45,6 +45,16 @@ proprio-space only
 
 connecting extero and proprio space
 
+** opt's notes
+ - for proprio-only show 3 figures: 1) behaviour without any learning,
+   which fails to precisely reach the goals because proprio
+   predictions don't "match" proprio states (nonlinear
+   deformations), 2) behaviour during learning, see how we actually
+   move closer to the goal over a few timesteps, 3) behaviour while
+   still learning but going to places we have already been: no error,
+   no learning / weight changes
+ - additional plots: original timeseries, model sweep response plot
+
 * Introduction
 
 Motor control for autonmous agents that need to learn some things

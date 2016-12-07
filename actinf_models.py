@@ -84,7 +84,7 @@ class ActInfKNN(ActInfModel):
 
     def bootstrap(self):
         # bootstrap model
-        print("bootstrapping")
+        print("%s.bootstrap'ping" % (self.__class__.__name__))
         for i in range(10):
             self.X_.append(np.random.uniform(-0.1, 0.1, (self.idim,)))
             self.y_.append(np.random.uniform(-0.1, 0.1, (self.odim,)))
@@ -316,7 +316,10 @@ class ActInfGMM(ActInfModel):
         return self.sample(X)
 
     def sample(self, X):
-        """sample from the model with conditioning single input pattern X"""
+        """ActInfGMM sample from the GMM model with conditioning single input pattern X
+        TODO: function conditional_dist, make predict/sample comply with sklearn and use the lowlevel
+              cond_dist for advanced uses like dynamic conditioning
+        """
         if not self.fitted:
             # return np.zeros((3,1))
             # model has not been bootstrapped, return random goal
@@ -333,7 +336,7 @@ class ActInfGMM(ActInfModel):
         return cond_sample
         
     def sample_batch(self, X, cond_dims = [0], out_dims = [1], resample_interval = 1):
-        """sample from the model with conditioning batch input X"""
+        """ActInfGMM sample from gmm model with conditioning batch input X"""
         # compute conditional
         sampmax = 20
         numsamplesteps = X.shape[0]
@@ -391,6 +394,8 @@ class ActInfHebbianSOM(ActInfModel):
         self.CT = ConstantTimeseries
         
         self.mapsize = 10
+        self.numepisodes_som  = 10
+        self.numepisodes_hebb = 10
         # FIXME: make neighborhood_size decrease with time
         
         # SOM exteroceptive stimuli 2D input
@@ -451,15 +456,21 @@ class ActInfHebbianSOM(ActInfModel):
         # som_e.learn(e)
         # som_p.learn(p)
         # TODO for j in numepisodes
-        for i in range(X.shape[0]):
-            # print("%s.fit_soms X = %s, y = %s" % (self.__class__.__name__, X[i], y[i]))
-            self.filter_e.learn(X[i])
-            self.filter_p.learn(y[i])
+        if X.shape[0] > 1:
+            numepisodes = self.numepisodes_som
+        else:
+            numepisodes = 1
+        i = 0
+        for j in range(numepisodes):
+            # print("%s.fit_soms episodes %d X = %s, y = %s" % (self.__class__.__name__, j, X[i], y[i]))
+            for i in range(X.shape[0]):
+                self.filter_e.learn(X[i])
+                self.filter_p.learn(y[i])
         # print np.argmin(som_e.distances(e)) # , som_e.distances(e)
 
     def fit_hebb(self, X, y):
         # print("%s.fit_hebb fitting X = %s, y = %s" % (self.__class__.__name__, X.shape, y.shape))
-        numepisodes_hebb = 1
+        # numepisodes_hebb = 1
         numsteps = X.shape[0]
         ################################################################################
         # fix the SOMs with learning rate constant 0
@@ -474,64 +485,71 @@ class ActInfHebbianSOM(ActInfModel):
 
         z_err_coef = 0.99
         z_err_norm_ = 1
-        Z_err_norm  = np.zeros((numepisodes_hebb*numsteps,1))
-        Z_err_norm_ = np.zeros((numepisodes_hebb*numsteps,1))
-        W_norm      = np.zeros((numepisodes_hebb*numsteps,1))
+        Z_err_norm  = np.zeros((self.numepisodes_hebb*numsteps,1))
+        Z_err_norm_ = np.zeros((self.numepisodes_hebb*numsteps,1))
+        W_norm      = np.zeros((self.numepisodes_hebb*numsteps,1))
                 
         # TODO for j in numepisodes
-        j = 0
-        for i in range(X.shape[0]):
-            # just activate
-            self.filter_e.learn(X[i])
-            self.filter_p.learn(y[i])
-
-            # fetch data induced activity
-            if self.hebblink_use_activity:
-                p_    = self.filter_p.activity.reshape(p_shape)
-            else:
-                p_    = self.filter_p.distances(p).flatten().reshape(p_shape)
-    
-            # compute prediction for p using e activation and hebbian weights
-            if self.hebblink_use_activity:
-                p_bar = np.dot(self.hebblink_filter.T, self.filter_e.activity.reshape(e_shape))
-            else:
-                p_bar = np.dot(self.hebblink_filter.T, self.filter_e.distances(e).flatten().reshape(e_shape))
-
-            # inject activity prediction
-            p_bar_sum = p_bar.sum()
-            if p_bar_sum > 0:
-                p_bar_normed = p_bar / p_bar_sum
-            else:
-                p_bar_normed = np.zeros(p_bar.shape)
+        # j = 0
+        if X.shape[0] > 1:
+            numepisodes = self.numepisodes_hebb
+        else:
+            numepisodes = 1
+        i = 0
+        for j in range(numepisodes):
+            # print("%s.fit_hebb episodes %d X = %s, y = %s" % (self.__class__.__name__, j, X[i], y[i]))
+            for i in range(X.shape[0]):
+                # just activate
+                self.filter_e.learn(X[i])
+                self.filter_p.learn(y[i])
         
-            # compute prediction error: data induced activity - prediction
-            z_err = p_ - p_bar
-            # z_err = p_bar - p_
-            z_err_norm = np.linalg.norm(z_err, 2)
-            if j == 0 and i == 0:
-                z_err_norm_ = z_err_norm
-            else:
-                z_err_norm_ = z_err_coef * z_err_norm_ + (1 - z_err_coef) * z_err_norm
-            w_norm = np.linalg.norm(self.hebblink_filter)
-
-            logidx = (j*numsteps) + i
-            Z_err_norm [logidx] = z_err_norm
-            Z_err_norm_[logidx] = z_err_norm_
-            W_norm     [logidx] = w_norm
+                # fetch data induced activity
+                if self.hebblink_use_activity:
+                    p_    = self.filter_p.activity.reshape(p_shape)
+                else:
+                    p_    = self.filter_p.distances(p).flatten().reshape(p_shape)
         
-            # z_err = p_bar - self.filter_p.activity.reshape(p_bar.shape)
-            # print "p_bar.shape", p_bar.shape
-            # print "self.filter_p.activity.flatten().shape", self.filter_p.activity.flatten().shape
+                # compute prediction for p using e activation and hebbian weights
+                if self.hebblink_use_activity:
+                    p_bar = np.dot(self.hebblink_filter.T, self.filter_e.activity.reshape(e_shape))
+                else:
+                    p_bar = np.dot(self.hebblink_filter.T, self.filter_e.distances(e).flatten().reshape(e_shape))
+        
+                # inject activity prediction
+                p_bar_sum = p_bar.sum()
+                if p_bar_sum > 0:
+                    p_bar_normed = p_bar / p_bar_sum
+                else:
+                    p_bar_normed = np.zeros(p_bar.shape)
             
-            # if i % 100 == 0:
-            #     print("%s.fit_hebb: iter %d/%d: z_err.shape = %s, |z_err| = %f, |W| = %f, |p_bar_normed| = %f" % (self.__class__.__name__, logidx, (numepisodes_hebb*numsteps), z_err.shape, z_err_norm_, w_norm, np.linalg.norm(p_bar_normed)))
+                # compute prediction error: data induced activity - prediction
+                z_err = p_ - p_bar
+                # z_err = p_bar - p_
+                z_err_norm = np.linalg.norm(z_err, 2)
+                if j == 0 and i == 0:
+                    z_err_norm_ = z_err_norm
+                else:
+                    z_err_norm_ = z_err_coef * z_err_norm_ + (1 - z_err_coef) * z_err_norm
+                w_norm = np.linalg.norm(self.hebblink_filter)
         
-            # d_hebblink_filter = et() * np.outer(self.filter_e.activity.flatten(), self.filter_p.activity.flatten())
-            if self.hebblink_use_activity:
-                d_hebblink_filter = self.hebblink_et() * np.outer(self.filter_e.activity.flatten(), z_err)
-            else:
-                d_hebblink_filter = self.hebblink_et() * np.outer(self.filter_e.distances(e), z_err)
-            self.hebblink_filter += d_hebblink_filter
+                logidx = (j*numsteps) + i
+                Z_err_norm [logidx] = z_err_norm
+                Z_err_norm_[logidx] = z_err_norm_
+                W_norm     [logidx] = w_norm
+            
+                # z_err = p_bar - self.filter_p.activity.reshape(p_bar.shape)
+                # print "p_bar.shape", p_bar.shape
+                # print "self.filter_p.activity.flatten().shape", self.filter_p.activity.flatten().shape
+                
+                # if i % 100 == 0:
+                #     print("%s.fit_hebb: iter %d/%d: z_err.shape = %s, |z_err| = %f, |W| = %f, |p_bar_normed| = %f" % (self.__class__.__name__, logidx, (self.numepisodes_hebb*numsteps), z_err.shape, z_err_norm_, w_norm, np.linalg.norm(p_bar_normed)))
+            
+                # d_hebblink_filter = et() * np.outer(self.filter_e.activity.flatten(), self.filter_p.activity.flatten())
+                if self.hebblink_use_activity:
+                    d_hebblink_filter = self.hebblink_et() * np.outer(self.filter_e.activity.flatten(), z_err)
+                else:
+                    d_hebblink_filter = self.hebblink_et() * np.outer(self.filter_e.distances(e), z_err)
+                self.hebblink_filter += d_hebblink_filter
             
     def fit(self, X, y):
         # print("%s.fit fitting X = %s, y = %s" % (self.__class__.__name__, X, y))
@@ -573,8 +591,8 @@ class ActInfHebbianSOM(ActInfModel):
             # print "np.sum(self.filter_p.activity)", np.sum(self.filter_p.activity), (self.filter_p.activity >= 0).all()
         
             # self.filter_p.learn(p)
-            # emodes: 0
-            emode = 1 # 1, 2
+            # emodes: 0, 1, 2
+            emode = 0 #
             if i % 1 == 0:
                 if emode == 0:
                     e2p_w_p_weights_ = []
