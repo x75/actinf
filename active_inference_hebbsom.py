@@ -477,7 +477,7 @@ def main_kohonen(args):
     
     P_ = np.zeros((EP.shape[0], dim_p))    
     E_ = np.zeros((EP.shape[0], dim_e))
-    e2p_w_p_weights = filter_p.neuron(filter_p.flat_to_coords(filter_p.sample(1)[0]))
+    # e2p_w_p_weights = filter_p.neuron(filter_p.flat_to_coords(filter_p.sample(1)[0]))
     for i in range(EP.shape[0]):
         e = EP[i,:dim_e]
         p = EP[i,dim_e:]

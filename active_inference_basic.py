@@ -402,7 +402,7 @@ class ActiveInferenceExperiment(object):
         self.mm.fit(self.S_ext, self.M_prop_pred)
         ext_err = np.sum(np.abs(self.goal_ext - self.S_ext))
         if i % self.goal_sample_interval == 0 or \
-            ((i - self.goal_sample_time) > 5 and ext_err > 0.0):
+            ((i - self.goal_sample_time) > 5 and ext_err > 0.1):
             # update e2p
             EP = np.hstack((np.asarray(self.e2p.X_), np.asarray(self.e2p.y_)))
             # print "EP[%d] = %s" % (i, EP)
@@ -1080,8 +1080,9 @@ class ActiveInferenceExperiment(object):
 
         pl.subplot(616)
         pl.title("Exteroceptive state and goal")
-        pl.plot(self.logs["S_ext"])
-        pl.plot(self.logs["goal_ext"])
+        pl.plot(self.logs["S_ext"], label="S_ext")
+        pl.plot(self.logs["goal_ext"], label="goal_ext")
+        pl.legend()
         
         pl.show()
 
