@@ -73,7 +73,8 @@ class ActiveInferenceExperiment(object):
             self.idim = idim
         self.odim = self.environment.conf.m_ndims
         # exteroceptive dimensionality
-        self.ext_dim = 2 # cartesian
+        self.dim_ext  = 2 # cartesian
+        # self.dim_prop = 2 # cartesian
 
         # prepare run_hooks
         self.run_hooks = OrderedDict()
@@ -85,8 +86,8 @@ class ActiveInferenceExperiment(object):
         self.init_model (self.model)
 
         # sensory space mappings: this are KNN models and just used as data store for X,Y
-        self.e2p = ActInfKNN(self.ext_dim, self.odim)
-        self.p2e = ActInfKNN(self.odim, self.ext_dim)
+        self.e2p = ActInfKNN(self.dim_ext, self.odim)
+        self.p2e = ActInfKNN(self.odim, self.dim_ext)
 
         self.init_e2p(e2pmodel)
                 
@@ -98,11 +99,11 @@ class ActiveInferenceExperiment(object):
             "E_prop_pred": {"col": self.odim},
             "M_prop_pred": {"col": self.odim},
             "goal_prop":   {"col": self.odim},
-            "S_ext":       {"col": self.ext_dim},
+            "S_ext":       {"col": self.dim_ext},
             "E2P_pred":    {"col": self.odim},
-            "P2E_pred":    {"col": self.ext_dim},
-            "goal_ext":    {"col": self.ext_dim},
-            "E_pred_e":    {"col": self.ext_dim},
+            "P2E_pred":    {"col": self.dim_ext},
+            "goal_ext":    {"col": self.dim_ext},
+            "E_pred_e":    {"col": self.dim_ext},
             "X_":          {"col": -1}, # 6
             "X__":         {"col": -1}, # 6
             "y_":          {"col": -1}  # 3 low-dim
@@ -127,11 +128,11 @@ class ActiveInferenceExperiment(object):
         self.S_prop_pred = np.random.normal(0, 0.01, (1, self.odim))
 
     def init_e2p(self, e2pmodel):
-        mmdims = self.ext_dim + self.odim
+        mmdims = self.dim_ext + self.odim
         if e2pmodel == "gmm":
-            self.mm = ActInfGMM(idim = mmdims, odim = mmdims)
+            self.mm = ActInfGMM(idim = self.dim_ext, odim = self.odim)
         elif e2pmodel == "som":
-            self.mm = ActInfHebbianSOM(idim = self.idim, odim = self.odim)
+            self.mm = ActInfHebbianSOM(idim = self.dim_ext, odim = self.odim)
         else:
             print "unknown e2pmodel %s" % e2pmodel
         
@@ -310,7 +311,7 @@ class ActiveInferenceExperiment(object):
         # self.E_prop_pred = self.E_prop_pred_state
         
         # execute command propagating effect through system, body + environment
-        self.S_ext = self.environment.compute_sensori_effect(self.M_prop_pred.T).reshape((1, self.ext_dim))
+        self.S_ext = self.environment.compute_sensori_effect(self.M_prop_pred.T).reshape((1, self.dim_ext))
         # self.environment.plot_arm()
         
         # compute target for the prediction error driven forward model
@@ -377,7 +378,7 @@ class ActiveInferenceExperiment(object):
         self.e2p.fit(self.S_ext, self.M_prop_pred)
         self.p2e.fit(self.M_prop_pred.reshape((1, self.odim)), self.S_ext)
 
-        # self.E_pred_e = self.S_ext - self.goal_ext
+        self.E_pred_e = self.S_ext - self.goal_ext
 
     def lh_sample_discrete_uniform_goal(self, i):
         # discrete goal
@@ -418,17 +419,18 @@ class ActiveInferenceExperiment(object):
             self.cond[2:] = np.nan
             self.cond_ = np.random.uniform(-1, 1, (5, ))
             # randomly fetch an exteroceptive state that we have seen already (= reachable)
-            self.goal_ext = EP[np.random.choice(range(self.numsteps/2)),:2]
-            self.cond_[:2] = self.goal_ext
-            self.cond_[2:] = np.nan
+            self.goal_ext = EP[np.random.choice(range(self.numsteps/2)),:2].reshape((1, self.dim_ext))
+            # self.cond_[:2] = self.goal_ext
+            # self.cond_[2:] = np.nan
             # print "self.cond", self.cond
             # print "self.cond_", self.cond_
 
             # predict proprioceptive goal from exteroceptive one
-            if hasattr(self.mm, "cen_lst"):
-                self.goal_prop = self.mm.sample(self.cond_)
-            else:
-                self.goal_prop = self.mm.sample(self.goal_ext)
+            # if hasattr(self.mm, "cen_lst"):
+            #     self.goal_prop = self.mm.sample(self.cond_)
+            # else:
+            #     self.goal_prop = self.mm.sample(self.goal_ext)
+            self.goal_prop = self.mm.sample(self.goal_ext)
 
             self.goal_sample_time     = i
                             
@@ -490,7 +492,7 @@ class ActiveInferenceExperiment(object):
 
         # print "self.logs['X_']", self.logs["X_"]
 
-        print("%s.rh_e2p_fit batch fitting of e2p" % (self.__class__.__name__))
+        print("%s.rh_e2p_fit batch fitting of e2p (%s)" % (self.__class__.__name__, self.mm.__class__.__name__))
         self.mm.fit(np.asarray(self.e2p.X_)[10:], np.asarray(self.e2p.y_)[10:])
         
         # # fit gmm
@@ -502,10 +504,10 @@ class ActiveInferenceExperiment(object):
     def rh_e2p_sample(self):
         """sample the probabilistic e2p model for the entire dataset"""
         # intro checks
-        if not self.attr_check(["cen_lst", "cov_lst", "p_k", "logL", "logs"]):
+        if not self.attr_check(["logs"]):
             return
 
-        self.y_samples, self.y_samples_ = self.mm.sample_batch(X = self.logs["EP"], cond_dims = [0, 1], out_dims = [2,3,4], resample_interval = self.goal_sample_interval)
+        self.y_samples, self.y_samples_ = self.mm.sample_batch_legacy(X = self.logs["EP"], cond_dims = [0, 1], out_dims = [2,3,4], resample_interval = self.goal_sample_interval)
                 
     def rh_e2p_sample_plot(self):
         # intro checks
