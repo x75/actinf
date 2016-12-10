@@ -482,12 +482,12 @@ class ActInfHebbianSOM(ActInfModel):
         som_lr = 1e-2
         
         # SOM exteroceptive stimuli 2D input
-        self.kw_e = self.kwargs(shape = (self.mapsize, self.mapsize), dimension = self.idim, lr_init = som_lr, neighborhood_size = 1.6)
+        self.kw_e = self.kwargs(shape = (self.mapsize, self.mapsize), dimension = self.idim, lr_init = som_lr, neighborhood_size = 0.1)
         # self.kw_e = self.kwargs(shape = (self.mapsize, self.mapsize), dimension = self.idim, lr_init = 0.5, neighborhood_size = 0.6)
         self.som_e = Map(Parameters(**self.kw_e))
 
         # SOM proprioceptive stimuli 3D input
-        self.kw_p = self.kwargs(shape = (int(self.mapsize * 1.5), int(self.mapsize * 1.5)), dimension = self.odim, lr_init = som_lr, neighborhood_size = 1.7)
+        self.kw_p = self.kwargs(shape = (int(self.mapsize * 1.5), int(self.mapsize * 1.5)), dimension = self.odim, lr_init = som_lr, neighborhood_size = 0.1)
         # self.kw_p = self.kwargs(shape = (int(self.mapsize * 1.5), int(self.mapsize * 1.5)), dimension = self.odim, lr_init = 0.5, neighborhood_size = 0.7)
         self.som_p = Map(Parameters(**self.kw_p))
 
@@ -689,7 +689,7 @@ class ActInfHebbianSOM(ActInfModel):
             
                 # d_hebblink_filter = et() * np.outer(self.filter_e.activity.flatten(), self.filter_p.activity.flatten())
                 if self.hebblink_use_activity:
-                    eta = 1e-3 # self.hebblink_et()
+                    eta = 5e-3 # self.hebblink_et()
                     # outer = np.outer(self.filter_e.activity.flatten(), np.clip(z_err, 0, 1))
                     # outer = np.outer(e_, np.clip(z_err, 0, 1))
                     # outer = np.outer(e_, p_)
@@ -746,8 +746,11 @@ class ActInfHebbianSOM(ActInfModel):
 
         # propagate activation via hebbian associative links
         if self.hebblink_use_activity:
-            e2p_activation = np.dot(self.hebblink_filter.T, self.filter_e.activity.reshape((np.prod(self.filter_e.map._shape), 1)))
-            self.filter_p.activity = np.clip((e2p_activation / np.sum(e2p_activation)).reshape(self.filter_p.map._shape), 0, np.inf)
+            e_ = self.filter_e.activity.reshape((np.prod(self.filter_e.map._shape), 1))
+            e_ = (e_ == np.max(e_)) * 1.0
+            e2p_activation = np.dot(self.hebblink_filter.T, e_)
+            # print(e2p_activation)
+            self.filter_p.activity = np.clip((e2p_activation / (np.sum(e2p_activation) + 1e-9)).reshape(self.filter_p.map._shape), 0, np.inf)
         else:
             e2p_activation = np.dot(self.hebblink_filter.T, self.filter_e.distances(e).flatten().reshape(e_shape))
 
