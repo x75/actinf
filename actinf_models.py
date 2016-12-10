@@ -474,9 +474,9 @@ class ActInfHebbianSOM(ActInfModel):
         self.ET = ExponentialTimeseries
         self.CT = ConstantTimeseries
         
-        self.mapsize = 5 # 10
-        self.numepisodes_som  = 30
-        self.numepisodes_hebb = 60
+        self.mapsize = 5
+        self.numepisodes_som  = 20
+        self.numepisodes_hebb = 40
         # FIXME: make neighborhood_size decrease with time
 
         som_lr = 1e-2
@@ -516,10 +516,10 @@ class ActInfHebbianSOM(ActInfModel):
         # Hebbian learning rate
         if self.hebblink_use_activity:
             # self.hebblink_et = ExponentialTimeseries(-1e-4, 1e-1, 1e-1)
-            self.hebblink_et = ConstantTimeseries(5e-1)
+            self.hebblink_et = ConstantTimeseries(5e-3)
             # et = ConstantTimeseries(0.5)
         else:
-            self.hebblink_et = ConstantTimeseries(1e-5)
+            self.hebblink_et = ConstantTimeseries(1e-12)
 
     # SOM argument dict
     def kwargs(self, shape=(10, 10), z=0.001, dimension=2, lr_init = 1.0, neighborhood_size = 1):
@@ -584,7 +584,12 @@ class ActInfHebbianSOM(ActInfModel):
         Z_err_norm  = np.zeros((self.numepisodes_hebb*numsteps,1))
         Z_err_norm_ = np.zeros((self.numepisodes_hebb*numsteps,1))
         W_norm      = np.zeros((self.numepisodes_hebb*numsteps,1))
-                
+
+        # # plotting
+        # pl.ion()
+        # fig = pl.figure()
+        # fig2 = pl.figure()
+                    
         # TODO for j in numepisodes
         # j = 0
         if X.shape[0] > 1:
@@ -607,13 +612,45 @@ class ActInfHebbianSOM(ActInfModel):
                 else:
                     p_    = self.filter_p.distances(p).flatten().reshape(p_shape)
         
+                e_ = self.filter_e.activity.flatten()
+                e__ = e_.copy()
+                e_ = (e_ == np.max(e_))
+                
                 # compute prediction for p using e activation and hebbian weights
                 if self.hebblink_use_activity:
                     # print(self.hebblink_filter.T.shape, self.filter_e.activity.reshape(e_shape).shape)
-                    p_bar = np.dot(self.hebblink_filter.T, self.filter_e.activity.reshape(e_shape))
+                    # p_bar = np.dot(self.hebblink_filter.T, self.filter_e.activity.reshape(e_shape))
+                    # e_act = e_.reshape(e_shape)
+                    # e_act
+                    p_bar = np.dot(self.hebblink_filter.T, e_.reshape(e_shape))
                 else:
                     p_bar = np.dot(self.hebblink_filter.T, self.filter_e.distances(e).flatten().reshape(e_shape))
-        
+
+                p__ = p_.copy()
+                p_ = (p_ == np.max(p_)) * 1.0
+                p_bar_ = p_bar.copy()
+                p_bar = (p_bar == np.max(p_bar)) * 1.0
+
+                # # plotting
+                # ax1 = fig.add_subplot(411)
+                # ax1.cla()
+                # ax1.plot(e_ * np.max(e__))
+                # ax1.plot(e__)
+                # ax2 = fig.add_subplot(412)
+                # ax2.cla()
+                # ax2.plot(p_ * np.max(p_bar_))
+                # ax2.plot(p__)
+                # ax2.plot(p_bar * np.max(p_bar_))
+                # ax2.plot(p_bar_)
+                # ax3 = fig.add_subplot(413)
+                # ax3.cla()
+                # ax3.plot(self.filter_e.distances_[-1])
+                # ax4 = fig.add_subplot(414)
+                # ax4.cla()
+                # ax4.plot(self.filter_p.distances_[-1])
+                # pl.pause(0.001)
+                # pl.draw()
+                    
                 # inject activity prediction
                 p_bar_sum = p_bar.sum()
                 if p_bar_sum > 0:
@@ -625,6 +662,11 @@ class ActInfHebbianSOM(ActInfModel):
                 # print("p_", np.linalg.norm(p_))
                 # print("p_bar", np.linalg.norm(p_bar))
                 z_err = p_ - p_bar
+                idx = np.argmax(p_)
+                # print("idx", idx, z_err[idx])
+                # z_err = (p_[idx] - p_bar[idx]) * np.ones_like(p_)
+                # z_err = np.ones_like(p_) * 
+                # print("z_err", z_err)
                 # z_err = p_bar - p_
                 z_err_norm = np.linalg.norm(z_err, 2)
                 if j == 0 and i == 0:
@@ -647,17 +689,30 @@ class ActInfHebbianSOM(ActInfModel):
             
                 # d_hebblink_filter = et() * np.outer(self.filter_e.activity.flatten(), self.filter_p.activity.flatten())
                 if self.hebblink_use_activity:
-                    eta = self.hebblink_et()
-                    outer = np.outer(self.filter_e.activity.flatten(), z_err)
-                    outer = np.outer(self.filter_e.activity.flatten(), z_err)
+                    eta = 1e-3 # self.hebblink_et()
+                    # outer = np.outer(self.filter_e.activity.flatten(), np.clip(z_err, 0, 1))
+                    # outer = np.outer(e_, np.clip(z_err, 0, 1))
+                    # outer = np.outer(e_, p_)
+                    # outer = np.outer(e_, p__ * np.clip(z_err, 0, 1))
+                    outer = np.outer(e_, p_)
+                    
                     # print(outer.shape, self.hebblink_filter.shape)
-                    d_hebblink_filter = eta * outer
+                    d_hebblink_filter = eta * outer * (1e-3 + z_err[idx])
                     # d_hebblink_filter = eta * np.outer(z_err, self.filter_e.activity.flatten()).T
+
+                    # # plotting
+                    # f2ax1 = fig2.add_subplot(111)
+                    # f2ax1.imshow(self.hebblink_filter.T, interpolation="none")
+                    # # im = f2ax1.imshow(outer, interpolation="none")
+                    # # f2ax2 = pl.colorbar(im, ax=f2ax1)
+                    # pl.pause(1e-5)
+                    # pl.draw()
+                      
                 else:
                     d_hebblink_filter = self.hebblink_et() * np.outer(self.filter_e.distances(e), z_err)
                 self.hebblink_filter += d_hebblink_filter
             # print(Z_err_norm)
-            print("%s.fit_hebb error p/p_bar %f" % (self.__class__.__name__, np.array(Z_err_norm)[:j*X.shape[0]].mean()))
+            print("%s.fit_hebb error p/p_bar %f" % (self.__class__.__name__, np.array(Z_err_norm)[:logidx].mean()))
             print("%s.fit_hebb w_norm %f" % (self.__class__.__name__, w_norm))
             
             
