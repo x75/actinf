@@ -60,10 +60,11 @@ model_classes = ["KNN", "SOESGP", "STORKGP", "GMM", "HebbSOM"]
         
 class ActInfModel(object):
     """Base class for active inference function approximators / regressors"""
-    def __init__(self, idim = 1, odim = 1):
+    def __init__(self, idim = 1, odim = 1, numepisodes = 10):
         self.model = None
         self.idim = idim
         self.odim = odim
+        self.numepisodes = numepisodes
 
     def bootstrap(self): None
 
@@ -285,12 +286,12 @@ class ActInfSTORKGP(ActInfOTLModel):
 
 # GMM - gaussian mixture model
 class ActInfGMM(ActInfModel):
-    def __init__(self, idim = 1, odim = 1, K = 10):
+    def __init__(self, idim = 1, odim = 1, K = 10, numepisodes = 10):
         """ActInfGMM"""
         ActInfModel.__init__(self, idim, odim)
 
         # number of mixture components
-        self.K = K
+        self.K = 3 #K
         # list of K component idim x 1    centroid vectors
         self.cen_lst = []
         # list of K component idim x idim covariances
@@ -462,9 +463,9 @@ class ActInfGMM(ActInfModel):
 ################################################################################
 # Hebbian SOM model: connect to SOMs with hebbian links
 class ActInfHebbianSOM(ActInfModel):
-    def __init__(self, idim = 1, odim = 1):
+    def __init__(self, idim = 1, odim = 1, numepisodes = 10):
         """ActInfHebbianSOM"""
-        ActInfModel.__init__(self, idim, odim)
+        ActInfModel.__init__(self, idim, odim, numepisodes = numepisodes)
 
         # SOMs trained?
         self.soms_fitted = False
@@ -474,12 +475,12 @@ class ActInfHebbianSOM(ActInfModel):
         self.ET = ExponentialTimeseries
         self.CT = ConstantTimeseries
         
-        self.mapsize = 4
-        self.numepisodes_som  = 10
-        self.numepisodes_hebb = 10
+        self.mapsize = 10
+        self.numepisodes_som  = self.numepisodes
+        self.numepisodes_hebb = self.numepisodes
         # FIXME: make neighborhood_size decrease with time
 
-        som_lr = 1e-1
+        som_lr = 1e-3
         
         # SOM exteroceptive stimuli 2D input
         self.kw_e = self.kwargs(shape = (self.mapsize, self.mapsize), dimension = self.idim, lr_init = som_lr, neighborhood_size = 0.1)
@@ -558,7 +559,7 @@ class ActInfHebbianSOM(ActInfModel):
                 self.filter_e.learn(X[i])
                 self.filter_p.learn(y[i])
             print("%s.fit_soms batch e mean error = %f" % (self.__class__.__name__, np.asarray(self.filter_e.distances_).mean() ))
-            print("%s.fit_soms batch p mean error = %f, min = %f, max = %f" % (self.__class__.__name__, np.asarray(self.filter_p.distances_).mean(), np.asarray(self.filter_p.distances_).min(), np.asarray(self.filter_p.distances_).max() ))
+            print("%s.fit_soms batch p mean error = %f, min = %f, max = %f" % (self.__class__.__name__, np.asarray(self.filter_p.distances_).mean(), np.asarray(self.filter_p.distances_[-1]).min(), np.asarray(self.filter_p.distances_).max() ))
         # print np.argmin(som_e.distances(e)) # , som_e.distances(e)
 
     def fit_hebb(self, X, y):
@@ -689,7 +690,7 @@ class ActInfHebbianSOM(ActInfModel):
             
                 # d_hebblink_filter = et() * np.outer(self.filter_e.activity.flatten(), self.filter_p.activity.flatten())
                 if self.hebblink_use_activity:
-                    eta = 1e-3 # self.hebblink_et()
+                    eta = 5e-4 # self.hebblink_et()
                     # outer = np.outer(self.filter_e.activity.flatten(), np.clip(z_err, 0, 1))
                     # outer = np.outer(e_, np.clip(z_err, 0, 1))
                     # outer = np.outer(e_, p_)
@@ -744,6 +745,8 @@ class ActInfHebbianSOM(ActInfModel):
         # activate input network
         self.filter_e.learn(X)
 
+        # pl.plot(self.filter_e.
+        
         # propagate activation via hebbian associative links
         if self.hebblink_use_activity:
             e_ = self.filter_e.activity.reshape((np.prod(self.filter_e.map._shape), 1))
@@ -754,12 +757,15 @@ class ActInfHebbianSOM(ActInfModel):
         else:
             e2p_activation = np.dot(self.hebblink_filter.T, self.filter_e.distances(e).flatten().reshape(e_shape))
 
-        # sample the output network with 
-        e2p_w_p_weights = self.filter_p.neuron(self.filter_p.flat_to_coords(self.filter_p.sample(1)[0]))
+        # sample the output network with
+        sidx = self.filter_p.sample(1)[0]
+        e2p_w_p_weights = self.filter_p.neuron(self.filter_p.flat_to_coords(sidx))
+        # e2p_w_p_weights = self.filter_p.neuron(self.filter_p.flat_to_coords(np.argmax(self.filter_p.activity)))
         
-        return e2p_w_p_weights.reshape((1, self.odim))
-        
-
+        # return e2p_w_p_weights.reshape((1, self.odim))
+        # ret = np.random.normal(e2p_w_p_weights, self.filter_p.sigmas[sidx] * 0.001, (1, self.odim))
+        ret = np.random.normal(e2p_w_p_weights, 0.01, (1, self.odim))
+        return ret
     
     def sample_cond_legacy(self, X):
         """ActInfHebbianSOM.sample_cond: sample from model conditioned on X"""
@@ -876,11 +882,11 @@ def generate_inverted_sinewave_dataset(N = 1000):
     Y = X + 0.3 * np.sin(2*3.1415926*X) + np.random.uniform(-0.1, 0.1, N)
     X,Y = Y[:,np.newaxis],X[:,np.newaxis]
     
-    # pl.subplot(211)
-    # pl.plot(Y, X, "ko", alpha=0.25)
-    # pl.subplot(212)
-    # pl.plot(X, Y, "ko", alpha=0.25)
-    # pl.show()
+    pl.subplot(211)
+    pl.plot(Y, X, "ko", alpha=0.25)
+    pl.subplot(212)
+    pl.plot(X, Y, "ko", alpha=0.25)
+    pl.show()
     
     return X,Y
 
@@ -898,7 +904,7 @@ def test_model(args):
     elif args.datafile.startswith("inverted"):
         idim = 1
         odim = 1
-        X,Y = generate_inverted_sinewave_dataset(N = 1000)
+        X,Y = generate_inverted_sinewave_dataset(N = args.numsteps)
     else:
         idim = 1
         odim = 1
@@ -917,6 +923,8 @@ def test_model(args):
 
     mdlcls = get_class_from_name(args.modelclass)
     mdl = mdlcls(idim = idim, odim = odim)
+    if args.modelclass == "HebbSOM":
+        mdl = mdlcls(idim = idim, odim = odim, numepisodes = args.numepisodes)
 
     print("Testing model class %s, %s" % (mdlcls, mdl))
 
@@ -925,14 +933,36 @@ def test_model(args):
     mdl.fit(X, Y)
 
     if args.modelclass == "HebbSOM":
+        distances = []
+        activities = []
         for h in range(X.shape[0]):
-            prediction = mdl.predict(Y[h]).reshape((1, odim))
-            print("Y[h]", Y[h].shape, prediction.shape)
-            for i in range(odim):
-                pl.subplot(odim, 1, i+1)
+            X_ = (Y[h]).reshape((1, odim))
+            prediction = mdl.predict(X_)
+            distances.append(mdl.filter_e.distances(X_).flatten())
+            activities.append(mdl.filter_e.activity.flatten())
+            activities_sorted = activities[-1].argsort()
+            # print("Y[h]", h, Y[h].shape, prediction.shape)
+            for i in range(odim): # odim * 2
+                pl.subplot(3, 1, (i*2)+1)
                 target = Y[h,i]
-                pl.plot([h], [target], "ko", alpha=0.25)
-                pl.plot([h], [prediction[i]], "ko", alpha=0.25)
+                X__ = X[h]                
+                pl.plot(X__, [target], "k.", alpha=0.25)
+                pl.plot(X__, [prediction[0,i]], "go", alpha=0.25)
+                # pred1 = mdl.filter_e.neuron(mdl.filter_e.flat_to_coords(activities_sorted[-1]))
+                # pl.plot(X__, [pred1], "ro", alpha=0.5)
+                # pred2 = mdl.filter_e.neuron(mdl.filter_e.flat_to_coords(activities_sorted[-2]))
+                # pl.plot(X__, [pred2], "ro", alpha=0.25)
+        # pl.plot(X, Y, "k.", alpha=0.5)
+        pl.subplot(3, 1, 2)
+        distarray = np.array(distances)
+        print("distarray.shape", distarray.shape)
+        pl.pcolormesh(distarray.T)
+        pl.colorbar()
+        pl.subplot(3, 1, 3)
+        actarray = np.array(activities)
+        print("actarray.shape", actarray.shape)
+        pl.pcolormesh(actarray.T)
+        pl.colorbar()
 
             # nodes_e = filter_e.map.neurons[:,:,i]
             # nodes_p = filter_p.map.neurons[:,:,i]
@@ -952,10 +982,12 @@ def test_model(args):
             target     = Y[:,i]
             # prediction = Y_[:,i]
             
-            pl.plot(target, "k.", label="Y")
+            # pl.plot(target, "k.", label="Y")
             for j in range(numsamples):
                 prediction = Y_samples[j][:,i]
-                pl.plot(prediction, "r.", label="Y_", alpha=0.25)
+                # pl.plot(prediction, target, "r.", label="Y_", alpha=0.25)
+                pl.plot(X, prediction, "r.", label="Y_", alpha=0.25)
+                pl.plot(X, target, "g.", label="Y_", alpha=0.25)
             # get limits
             xlim = pl.xlim()
             ylim = pl.ylim()
@@ -966,6 +998,8 @@ def test_model(args):
             yran = ylim[1] - ylim[0]
             pl.text(xlim[0] + xran * 0.1, ylim[0] + yran * 0.3, "mse = %f" % mse)
             pl.text(xlim[0] + xran * 0.1, ylim[0] + yran * 0.5, "mae = %f" % mae)
+            # pl.plot(X[:,i], Y[:,i], "k.", alpha=0.25)
+        # pl.plot(Y)
         pl.show()
     
         
@@ -976,6 +1010,7 @@ if __name__ == "__main__":
     parser.add_argument("-d", "--datafile",  type=str, help="datafile containing t x (dim_extero + dim_proprio) matrix ", default="data/simplearm_n1000/EP_1000.npy")
     parser.add_argument("-m", "--modelclass", type=str, help="Which model class to test [KNN], " + ", ".join(model_classes), default="KNN")
     parser.add_argument("-n", "--numsteps",  type=int, help="Number of datapoints [1000]", default=1000)
+    parser.add_argument("-ne", "--numepisodes",  type=int, help="Number of episodes [10]", default=10)
     args = parser.parse_args()
     
     test_model(args)
