@@ -474,12 +474,12 @@ class ActInfHebbianSOM(ActInfModel):
         self.ET = ExponentialTimeseries
         self.CT = ConstantTimeseries
         
-        self.mapsize = 5
-        self.numepisodes_som  = 20
-        self.numepisodes_hebb = 40
+        self.mapsize = 4
+        self.numepisodes_som  = 10
+        self.numepisodes_hebb = 10
         # FIXME: make neighborhood_size decrease with time
 
-        som_lr = 1e-2
+        som_lr = 1e-1
         
         # SOM exteroceptive stimuli 2D input
         self.kw_e = self.kwargs(shape = (self.mapsize, self.mapsize), dimension = self.idim, lr_init = som_lr, neighborhood_size = 0.1)
@@ -487,7 +487,7 @@ class ActInfHebbianSOM(ActInfModel):
         self.som_e = Map(Parameters(**self.kw_e))
 
         # SOM proprioceptive stimuli 3D input
-        self.kw_p = self.kwargs(shape = (int(self.mapsize * 1.5), int(self.mapsize * 1.5)), dimension = self.odim, lr_init = som_lr, neighborhood_size = 0.1)
+        self.kw_p = self.kwargs(shape = (int(self.mapsize * np.sqrt(self.mapsize)), int(self.mapsize * 1.5)), dimension = self.odim, lr_init = som_lr, neighborhood_size = 0.1)
         # self.kw_p = self.kwargs(shape = (int(self.mapsize * 1.5), int(self.mapsize * 1.5)), dimension = self.odim, lr_init = 0.5, neighborhood_size = 0.7)
         self.som_p = Map(Parameters(**self.kw_p))
 
@@ -558,7 +558,7 @@ class ActInfHebbianSOM(ActInfModel):
                 self.filter_e.learn(X[i])
                 self.filter_p.learn(y[i])
             print("%s.fit_soms batch e mean error = %f" % (self.__class__.__name__, np.asarray(self.filter_e.distances_).mean() ))
-            print("%s.fit_soms batch p mean error = %f" % (self.__class__.__name__, np.asarray(self.filter_p.distances_).mean() ))
+            print("%s.fit_soms batch p mean error = %f, min = %f, max = %f" % (self.__class__.__name__, np.asarray(self.filter_p.distances_).mean(), np.asarray(self.filter_p.distances_).min(), np.asarray(self.filter_p.distances_).max() ))
         # print np.argmin(som_e.distances(e)) # , som_e.distances(e)
 
     def fit_hebb(self, X, y):
@@ -614,7 +614,7 @@ class ActInfHebbianSOM(ActInfModel):
         
                 e_ = self.filter_e.activity.flatten()
                 e__ = e_.copy()
-                e_ = (e_ == np.max(e_))
+                e_ = (e_ == np.max(e_)) * 1.0
                 
                 # compute prediction for p using e activation and hebbian weights
                 if self.hebblink_use_activity:
@@ -689,7 +689,7 @@ class ActInfHebbianSOM(ActInfModel):
             
                 # d_hebblink_filter = et() * np.outer(self.filter_e.activity.flatten(), self.filter_p.activity.flatten())
                 if self.hebblink_use_activity:
-                    eta = 5e-3 # self.hebblink_et()
+                    eta = 1e-3 # self.hebblink_et()
                     # outer = np.outer(self.filter_e.activity.flatten(), np.clip(z_err, 0, 1))
                     # outer = np.outer(e_, np.clip(z_err, 0, 1))
                     # outer = np.outer(e_, p_)
@@ -875,6 +875,13 @@ def generate_inverted_sinewave_dataset(N = 1000):
     X = np.linspace(0,1,N)
     Y = X + 0.3 * np.sin(2*3.1415926*X) + np.random.uniform(-0.1, 0.1, N)
     X,Y = Y[:,np.newaxis],X[:,np.newaxis]
+    
+    # pl.subplot(211)
+    # pl.plot(Y, X, "ko", alpha=0.25)
+    # pl.subplot(212)
+    # pl.plot(X, Y, "ko", alpha=0.25)
+    # pl.show()
+    
     return X,Y
 
 def test_model(args):
@@ -902,11 +909,11 @@ def test_model(args):
     # diagnostics
     print("X.shape = %s, idim = %d, Y.shape = %s, odim = %d" % (X.shape, idim, Y.shape, odim))
 
-    # pl.subplot(211)
-    # pl.plot(X)
-    # pl.subplot(212)
-    # pl.plot(Y)
-    # pl.show()
+    pl.subplot(211)
+    pl.plot(X)
+    pl.subplot(212)
+    pl.plot(Y)
+    pl.show()
 
     mdlcls = get_class_from_name(args.modelclass)
     mdl = mdlcls(idim = idim, odim = odim)
@@ -917,34 +924,50 @@ def test_model(args):
     
     mdl.fit(X, Y)
 
-    # plot prediction
-    numsamples = 20
-    Y_samples = []
-    for i in range(numsamples):
-        Y_samples.append(mdl.predict(X))
-    # print("Y_samples[0]", Y_samples[0])
+    if args.modelclass == "HebbSOM":
+        for h in range(X.shape[0]):
+            prediction = mdl.predict(Y[h]).reshape((1, odim))
+            print("Y[h]", Y[h].shape, prediction.shape)
+            for i in range(odim):
+                pl.subplot(odim, 1, i+1)
+                target = Y[h,i]
+                pl.plot([h], [target], "ko", alpha=0.25)
+                pl.plot([h], [prediction[i]], "ko", alpha=0.25)
 
-    for i in range(odim):
-        pl.subplot(odim, 1, i+1)
-        target     = Y[:,i]
-        # prediction = Y_[:,i]
-        
-        pl.plot(target, "k.", label="Y")
-        for j in range(numsamples):
-            prediction = Y_samples[j][:,i]
-            pl.plot(prediction, "r.", label="Y_", alpha=0.25)
-        # get limits
-        xlim = pl.xlim()
-        ylim = pl.ylim()
-        error = target - prediction
-        mse   = np.mean(np.square(error))
-        mae   = np.mean(np.abs(error))
-        xran = xlim[1] - xlim[0]
-        yran = ylim[1] - ylim[0]
-        pl.text(xlim[0] + xran * 0.1, ylim[0] + yran * 0.3, "mse = %f" % mse)
-        pl.text(xlim[0] + xran * 0.1, ylim[0] + yran * 0.5, "mae = %f" % mae)
-    pl.show()
-
+            # nodes_e = filter_e.map.neurons[:,:,i]
+            # nodes_p = filter_p.map.neurons[:,:,i]
+            # pl.plot(nodes, filter_e.map.neurons[:,:,1], "ko", alpha=0.5, ms=10)
+        pl.show()
+    
+    else:
+        # plot prediction
+        numsamples = 2
+        Y_samples = []
+        for i in range(numsamples):
+            Y_samples.append(mdl.predict(X))
+        # print("Y_samples[0]", Y_samples[0])
+    
+        for i in range(odim):
+            pl.subplot(odim, 1, i+1)
+            target     = Y[:,i]
+            # prediction = Y_[:,i]
+            
+            pl.plot(target, "k.", label="Y")
+            for j in range(numsamples):
+                prediction = Y_samples[j][:,i]
+                pl.plot(prediction, "r.", label="Y_", alpha=0.25)
+            # get limits
+            xlim = pl.xlim()
+            ylim = pl.ylim()
+            error = target - prediction
+            mse   = np.mean(np.square(error))
+            mae   = np.mean(np.abs(error))
+            xran = xlim[1] - xlim[0]
+            yran = ylim[1] - ylim[0]
+            pl.text(xlim[0] + xran * 0.1, ylim[0] + yran * 0.3, "mse = %f" % mse)
+            pl.text(xlim[0] + xran * 0.1, ylim[0] + yran * 0.5, "mae = %f" % mae)
+        pl.show()
+    
         
 if __name__ == "__main__":
     import argparse

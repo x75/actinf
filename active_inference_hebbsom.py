@@ -183,7 +183,7 @@ def main_kohonen(args):
                     learning_rate=ET(-1e-4, lr_init, 0.01),
                     noise_variance=z)
     
-    mapsize = 10
+    mapsize = 4
     # FIXME: make neighborhood_size decrease with time
     
     # SOM exteroceptive stimuli 2D input
