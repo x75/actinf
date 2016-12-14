@@ -463,7 +463,7 @@ class ActInfGMM(ActInfModel):
 ################################################################################
 # Hebbian SOM model: connect to SOMs with hebbian links
 class ActInfHebbianSOM(ActInfModel):
-    def __init__(self, idim = 1, odim = 1, numepisodes = 10):
+    def __init__(self, idim = 1, odim = 1, numepisodes = 100):
         """ActInfHebbianSOM"""
         ActInfModel.__init__(self, idim, odim, numepisodes = numepisodes)
 
@@ -554,6 +554,14 @@ class ActInfHebbianSOM(ActInfModel):
                     learning_rate=self.ET(-1e-4, lr_init, 1e-9),
                     noise_variance=z)
 
+    def set_learning_rate_constant(self, c = 0.0):
+        # print("fit_hebb", self.filter_e.map._learning_rate)
+        self.filter_e.map._learning_rate = self.CT(c)
+        self.filter_p.map._learning_rate = self.CT(c)
+        # fix the SOMs with learning rate constant 0
+        self.filter_e_lr = self.filter_e.map._learning_rate
+        self.filter_p_lr = self.filter_p.map._learning_rate
+
     def fit_soms(self, X, y):
         """ActInfHebbianSOM"""
         # print("%s.fit_soms fitting X = %s, y = %s" % (self.__class__.__name__, X.shape, y.shape))
@@ -586,9 +594,15 @@ class ActInfHebbianSOM(ActInfModel):
         # for j in range(numepisodes):
         # (dWnorm_e_ == 0 and dWnorm_p_ == 0) or 
         # while (dWnorm_e_ > 0.05 and dWnorm_p_ > 0.05):
-        while (np.abs(dWnorm_e__ - dWnorm_e_) > 0.005 and np.abs(dWnorm_p__ - dWnorm_p_) > 0.005):
+        do_convergence = True
+        # eps_convergence = 0.005
+        eps_convergence = 0.1
+        while (do_convergence) and (np.abs(dWnorm_e__ - dWnorm_e_) > eps_convergence and np.abs(dWnorm_p__ - dWnorm_p_) > eps_convergence):
             if j > 0 and j % 10 == 0:
                 print("%s.fit_soms episode %d / %d" % (self.__class__.__name__, j, numepisodes))
+            if X.shape[0] == 1:
+                print("no convergence")
+                do_convergence = False
             dWnorm_e = 0
             dWnorm_p = 0
             
@@ -657,9 +671,13 @@ class ActInfHebbianSOM(ActInfModel):
         dWnorm_ = 10.0
         j = 0
         # for j in range(numepisodes):
-        while z_err_norm_ > 0.005 and np.abs(z_err_norm__ - z_err_norm_) > 0.005:
+        do_convergence = True
+        while do_convergence and z_err_norm_ > 0.005 and np.abs(z_err_norm__ - z_err_norm_) > 0.005:
             if j > 0 and j % 10 == 0:
                 print("%s.fit_hebb episode %d / %d" % (self.__class__.__name__, j, numepisodes))
+            if X.shape[0] == 1:
+                print("no convergence")
+                do_convergence = False
             for i in range(X.shape[0]):
                 # just activate
                 self.filter_e.learn(X[i])

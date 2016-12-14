@@ -205,6 +205,8 @@ class ActiveInferenceExperiment(object):
 
     def rh_e2p_change_goal_sampling(self):
         self.rh_learn_proprio_hooks["hook04"] = self.sample_discrete_from_extero
+        # if hasattr(self.mm, "set_learning_rate_constant"):
+        #     self.mm.set_learning_rate_constant(0.0)
         
             
     def init_model(self, model):
