@@ -476,8 +476,8 @@ class ActInfHebbianSOM(ActInfModel):
         self.CT = ConstantTimeseries
         
         self.mapsize = 10
-        self.mapsize_e = self.idim * 5
-        self.mapsize_p = self.odim * 5
+        self.mapsize_e = self.idim * 2
+        self.mapsize_p = self.odim * 2
         self.numepisodes_som  = self.numepisodes
         self.numepisodes_hebb = self.numepisodes
         # FIXME: make neighborhood_size decrease with time
@@ -530,8 +530,8 @@ class ActInfHebbianSOM(ActInfModel):
         
         # Hebbian learning rate
         if self.hebblink_use_activity:
-            # self.hebblink_et = ExponentialTimeseries(-1e-4, 1e-1, 1e-1)
-            self.hebblink_et = ConstantTimeseries(5e-3)
+            self.hebblink_et = ExponentialTimeseries(-1e-4, 1e-1, 0)
+            # self.hebblink_et = ConstantTimeseries(5e-3)
             # et = ConstantTimeseries(0.5)
         else:
             self.hebblink_et = ConstantTimeseries(1e-12)
@@ -542,8 +542,8 @@ class ActInfHebbianSOM(ActInfModel):
         return dict(dimension=dimension,
                     shape=shape,
                     neighborhood_size = neighborhood_size,
-                    #learning_rate=self.ET(-1e-4, lr_init, 1e-9),
-                    learning_rate=self.CT(lr_init),
+                    learning_rate=self.ET(-1e-4, lr_init, 0),
+                    # learning_rate=self.CT(lr_init),
                     noise_variance=z)
 
     def kwargs_gas(self, shape=(100,), z=0.001, dimension=3, lr_init = 1.0, neighborhood_size = 1):
@@ -580,6 +580,9 @@ class ActInfHebbianSOM(ActInfModel):
         dWnorm_e__ = 2 # long horizon
         dWnorm_p__ = 2
         j = 0
+
+        idx_shuffle = np.arange(X.shape[0])
+                
         # for j in range(numepisodes):
         # (dWnorm_e_ == 0 and dWnorm_p_ == 0) or 
         # while (dWnorm_e_ > 0.05 and dWnorm_p_ > 0.05):
@@ -588,10 +591,13 @@ class ActInfHebbianSOM(ActInfModel):
                 print("%s.fit_soms episode %d / %d" % (self.__class__.__name__, j, numepisodes))
             dWnorm_e = 0
             dWnorm_p = 0
+            
+            np.random.shuffle(idx_shuffle)
             for i in range(X.shape[0]):
-                self.filter_e.learn(X[i])
+                lidx = idx_shuffle[i]
+                self.filter_e.learn(X[lidx])
                 dWnorm_e += np.linalg.norm(self.filter_e.map.delta)
-                self.filter_p.learn(y[i])
+                self.filter_p.learn(y[lidx])
                 dWnorm_p += np.linalg.norm(self.filter_p.map.delta)
             dWnorm_e /= X.shape[0]
             dWnorm_e /= self.filter_e.map.numunits
@@ -628,7 +634,8 @@ class ActInfHebbianSOM(ActInfModel):
         e_shape = (np.prod(self.filter_e.map._shape), 1)
         p_shape = (np.prod(self.filter_p.map._shape), 1)
 
-        z_err_coef = 0.99
+        z_err_coef_1 = 0.8
+        z_err_coef_2 = 0.9
         z_err_norm_ = 1 # fast
         z_err_norm__ = 2 # slow
         Z_err_norm  = np.zeros((self.numepisodes_hebb*numsteps,1))
@@ -650,7 +657,7 @@ class ActInfHebbianSOM(ActInfModel):
         dWnorm_ = 10.0
         j = 0
         # for j in range(numepisodes):
-        while np.abs(z_err_norm__ - z_err_norm_) > 0.005:
+        while z_err_norm_ > 0.005 and np.abs(z_err_norm__ - z_err_norm_) > 0.005:
             if j > 0 and j % 10 == 0:
                 print("%s.fit_hebb episode %d / %d" % (self.__class__.__name__, j, numepisodes))
             for i in range(X.shape[0]):
@@ -726,8 +733,8 @@ class ActInfHebbianSOM(ActInfModel):
                 # if j == 0 and i == 0:
                 #     z_err_norm_ = z_err_norm
                 # else:
-                z_err_norm_  = z_err_coef * z_err_norm_ + (1 - z_err_coef) * z_err_norm
-                z_err_norm__ = z_err_coef * z_err_norm__ + (1 - z_err_coef) * z_err_norm_
+                z_err_norm_  = z_err_coef_1 * z_err_norm_ + (1 - z_err_coef_1) * z_err_norm
+                z_err_norm__ = z_err_coef_2 * z_err_norm__ + (1 - z_err_coef_2) * z_err_norm_
         
                 w_norm = np.linalg.norm(self.hebblink_filter)
                 
@@ -745,7 +752,8 @@ class ActInfHebbianSOM(ActInfModel):
             
                 # d_hebblink_filter = et() * np.outer(self.filter_e.activity.flatten(), self.filter_p.activity.flatten())
                 if self.hebblink_use_activity:
-                    eta = 5e-4 # self.hebblink_et()
+                    # eta = 5e-4
+                    eta = self.hebblink_et()
                     # outer = np.outer(self.filter_e.activity.flatten(), np.clip(z_err, 0, 1))
                     # outer = np.outer(e_, np.clip(z_err, 0, 1))
                     # outer = np.outer(e_, p_)
@@ -756,8 +764,10 @@ class ActInfHebbianSOM(ActInfModel):
                     # print("outer", outer)
                     # print("modulator", z_err[idx])
                     # d_hebblink_filter = eta * outer * (-1e-3 - z_err[idx])
-                    d_hebblink_filter = eta * outer * np.abs((z_err_norm_ - z_err_norm))
                     # d_hebblink_filter = eta * np.outer(z_err, self.filter_e.activity.flatten()).T
+                    # d_hebblink_filter = eta * outer * np.abs((z_err_norm_ - z_err_norm))
+                    # d_hebblink_filter = eta * outer * (z_err_norm - z_err_norm_)
+                    d_hebblink_filter = eta * outer
 
                     # # plotting
                     # f2ax1 = fig2.add_subplot(111)
@@ -794,12 +804,14 @@ class ActInfHebbianSOM(ActInfModel):
 
     def sample(self, X):
         """ActInfHebbianSOM.sample"""
-        if X.shape[0] > 1: # batch
+        # print("%s.sample X.shape = %s, %d" % (self.__class__.__name__, X.shape, 0))
+        if len(X.shape) == 2 and X.shape[0] > 1: # batch
             return self.sample_batch(X)
         return self.sample_cond(X)
 
     def sample_cond(self, X):
         """ActInfHebbianSOM.sample_cond: draw single sample from model conditioned on X"""
+        # print("%s.sample_cond X.shape = %s, %d" % (self.__class__.__name__, X.shape, 0))
 
         # fix the SOMs with learning rate constant 0
         self.filter_e_lr = self.filter_e.map._learning_rate
@@ -951,11 +963,11 @@ def generate_inverted_sinewave_dataset(N = 1000):
     Y = X + 0.3 * np.sin(2*3.1415926*X) + np.random.uniform(-0.1, 0.1, N)
     X,Y = Y[:,np.newaxis],X[:,np.newaxis]
     
-    pl.subplot(211)
-    pl.plot(Y, X, "ko", alpha=0.25)
-    pl.subplot(212)
-    pl.plot(X, Y, "ko", alpha=0.25)
-    pl.show()
+    # pl.subplot(211)
+    # pl.plot(Y, X, "ko", alpha=0.25)
+    # pl.subplot(212)
+    # pl.plot(X, Y, "ko", alpha=0.25)
+    # pl.show()
     
     return X,Y
 
@@ -1000,6 +1012,7 @@ def test_model(args):
     print("X.shape = %s, Y.shape = %s" % (X.shape, Y.shape))
     
     mdl.fit(X, Y)
+    
 
     if args.modelclass == "HebbSOM":
         e_nodes = mdl.filter_e.map.neurons
@@ -1010,27 +1023,31 @@ def test_model(args):
         print(e_nodes.shape, p_nodes.shape)
         # print(e_nodes, p_nodes)
 
+        import matplotlib.gridspec as gridspec
         # one-dimensional plot of components of inputs together with those of SOM nodes for all i and o components
+        fig1 = pl.figure()
         numplots = idim + odim
+        gs = gridspec.GridSpec(numplots, 1)
         for i in range(idim):
-            pl.subplot(numplots, 1, i+1)
-            pl.plot(X[:,i], np.ones_like(X[:,i]) * -10, "ko", alpha=0.33)
-            pl.hist(X[:,i], bins=20)
+            ax = fig1.add_subplot(gs[i,0])
+            ax.plot(X[:,i], np.ones_like(X[:,i]) * -10, "ko", alpha=0.33)
+            ax.hist(X[:,i], bins=20)
             for j,node in enumerate(e_nodes[:,i]):
                 # print("node", j, node)
-                pl.plot([node], [-25.0], "ro", alpha=0.33, markersize=10)
-                pl.text(node, -25.0, "n%d" % j, fontsize=6)
+                ax.plot([node], [-25.0], "ro", alpha=0.33, markersize=10)
+                ax.text(node, -25.0, "n%d" % j, fontsize=6)
             # pl.plot(e_nodes[:,i], np.zeros_like(e_nodes[:,i]), "ro", alpha=0.33, markersize=10)
         for i in range(idim, numplots):
-            pl.subplot(numplots, 1, i+1)
-            pl.plot(Y[:,i-idim], np.ones_like(Y[:,i-idim]) * -10, "ko", alpha=0.33)
-            pl.hist(Y[:,i-idim], bins=20)
+            ax = fig1.add_subplot(gs[i,0])
+            ax.plot(Y[:,i-idim], np.ones_like(Y[:,i-idim]) * -10, "ko", alpha=0.33)
+            ax.hist(Y[:,i-idim], bins=20)
             for j,node in enumerate(p_nodes[:,i-idim]):
                 # print("node", j, node)
-                pl.plot([node], [0.0], "ro", alpha=0.33, markersize=10)
-                pl.text(node, 0.0, "n%d" % j, fontsize=6)
+                ax.plot([node], [0.0], "ro", alpha=0.33, markersize=10)
+                ax.text(node, 0.0, "n%d" % j, fontsize=6)
             # pl.plot(p_nodes[:,i-idim], np.zeros_like(p_nodes[:,i-idim]), "ro", alpha=0.33, markersize=10)
-        pl.show()
+        fig1.show()
+        # pl.show()
 
         
         # plot input data distribution and SOM node locations as scattermatrix all X comps over all Y comps
@@ -1062,8 +1079,10 @@ def test_model(args):
                 #     sm[i,j].plot(p_nodes[:,j-idim], e_nodes[:,i], "go", alpha=0.5, markersize=8)
                 # if i != j and i in odims and j in idims:
                 #     sm[i,j].plot(e_nodes[:,j], p_nodes[:,i-idim], "go", alpha=0.5, markersize=8)
-                
-        pl.show()
+
+        # get figure reference from axis and show
+        fig2 = sm[0,0].get_figure()
+        fig2.show()
 
 
         ################################################################################
@@ -1071,38 +1090,71 @@ def test_model(args):
         distances = []
         activities = []
         numplots = idim * odim + 2
+        fig3 = pl.figure()
+        gs = gridspec.GridSpec(idim, odim)
+        fig3axes = []
+        for i in range(idim):
+            fig3axes.append([])
+            for o in range(odim):
+                fig3axes[i].append(fig3.add_subplot(gs[i,o]))
+
+        err = 0
         for h in range(X.shape[0]):
-            X_ = (Y[h]).reshape((1, odim))
+            # X_ = (Y[h]).reshape((1, odim))
+            X_ = X[h]
+            # print("X_", X_.shape, X_)
+            # predict proprio 3D from extero 2D
             prediction = mdl.predict(X_)
-            # print("prediction = %s" % prediction)
+            # print("X_.shape = %s, %d" % (X_.shape, 0))
+            # print("prediction.shape = %s, %d" % (prediction.shape, 0))
             distances.append(mdl.filter_e.distances(X_).flatten())
             activities.append(mdl.filter_e.activity.flatten())
             activities_sorted = activities[-1].argsort()
             # print("Y[h]", h, Y[h].shape, prediction.shape)
+            
             colsa = ["k", "r", "g"]
             colsb = ["c", "m", "y"]
             for i in range(odim): # odim * 2
                 for j in range(idim):
-                    pl.subplot(numplots, 1, (i*idim)+j+1)
+                    # pl.subplot(numplots, 1, (i*idim)+j+1)
+                    ax = fig3axes[j][i]
                     target = Y[h,i]
-                    X__ = X[h,j]
-                    pl.plot(X__, [target], colsa[j] + ".", alpha=0.25)
-                    pl.plot(X__, [prediction[0,j]], colsb[j] + "o", alpha=0.25)
+                    X__ = X_[j] # X[h,j]
+                    err += np.sum(np.square(target - prediction))
+                    ax.plot(X__, [target], colsa[j] + ".", alpha=0.25, label="target_%d" % i)
+                    ax.plot(X__, [prediction[0,i]], colsb[j] + "o", alpha=0.25, label="pred_%d" % i)
                     # pred1 = mdl.filter_e.neuron(mdl.filter_e.flat_to_coords(activities_sorted[-1]))
-                    # pl.plot(X__, [pred1], "ro", alpha=0.5)
+                    # ax.plot(X__, [pred1], "ro", alpha=0.5)
                     # pred2 = mdl.filter_e.neuron(mdl.filter_e.flat_to_coords(activities_sorted[-2]))
-                    # pl.plot(X__, [pred2], "ro", alpha=0.25)
+                    # ax.plot(X__, [pred2], "ro", alpha=0.25)
+        print("accum total err = %f" % (err / X.shape[0] / (idim * odim)))
+        fig3.show()
+        
+                    
+        fig4 = pl.figure()
+        gs = gridspec.GridSpec(3, 1)
         # pl.plot(X, Y, "k.", alpha=0.5)
-        pl.subplot(numplots, 1, numplots-1)
+        # pl.subplot(numplots, 1, numplots-1)
+        ax1 = fig4.add_subplot(gs[0])
+        # im1 = ax1.imshow(mdl.hebblink_filter, interpolation="none", cmap=pl.get_cmap("gray"))
+        im1 = ax1.pcolormesh(mdl.hebblink_filter.T, cmap=pl.get_cmap("gray"))
+        ax1.set_xlabel("in (e)")
+        ax1.set_ylabel("out (p)")
+        cbar = fig4.colorbar(mappable = im1, ax=ax1, orientation="horizontal")
+        
+        ax2 = fig4.add_subplot(gs[1])
+
         distarray = np.array(distances)
         print("distarray.shape", distarray.shape)
-        pl.pcolormesh(distarray.T)
-        pl.colorbar()
-        pl.subplot(numplots, 1, numplots)
+        pcm = ax2.pcolormesh(distarray.T)
+        cbar = fig4.colorbar(mappable = pcm, ax=ax2, orientation="horizontal")
+        
+        # pl.subplot(numplots, 1, numplots)
+        ax3 = fig4.add_subplot(gs[2])
         actarray = np.array(activities)
         print("actarray.shape", actarray.shape)
-        pl.pcolormesh(actarray.T)
-        pl.colorbar()
+        pcm = ax3.pcolormesh(actarray.T)
+        cbar = fig4.colorbar(mappable = pcm, ax=ax3, orientation="horizontal")
 
         # nodes_e = filter_e.map.neurons[:,:,i]
         # nodes_p = filter_p.map.neurons[:,:,i]
