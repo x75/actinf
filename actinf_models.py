@@ -30,6 +30,7 @@ from __future__ import print_function
 import numpy as np
 import scipy.sparse as sparse
 import pylab as pl
+import matplotlib.gridspec as gridspec
 import cPickle
 
 # KNN
@@ -533,8 +534,13 @@ class ActInfHebbianSOM(ActInfModel):
         # hebblink_som    = np.random.uniform(-1e-4, 1e-4, (np.prod(som_e._shape), np.prod(som_p._shape)))
         # hebblink_filter = np.random.uniform(-1e-4, 1e-4, (np.prod(filter_e.map._shape), np.prod(filter_p.map._shape)))
         self.hebblink_som    = np.zeros((np.prod(self.som_e._shape), np.prod(self.som_p._shape)))
-        self.hebblink_filter = np.zeros((np.prod(self.filter_e.map._shape), np.prod(self.filter_p.map._shape)))
-        # self.hebblink_filter = np.random.normal(0, 1e-6, (np.prod(self.filter_e.map._shape), np.prod(self.filter_p.map._shape)))
+        # self.hebblink_filter = np.zeros((np.prod(self.filter_e.map._shape), np.prod(self.filter_p.map._shape)))
+        self.hebblink_filter = np.random.normal(0, 1e-6, (np.prod(self.filter_e.map._shape), np.prod(self.filter_p.map._shape)))
+
+        # # sparse hebblink
+        # self.hebblink_filter = sparse.rand(m = np.prod(self.filter_e.map._shape),
+        #                                    n = np.prod(self.filter_p.map._shape)) * 1e-3
+        
         self.hebblink_use_activity = True # use activation or distance
         
         # Hebbian learning rate
@@ -550,7 +556,7 @@ class ActInfHebbianSOM(ActInfModel):
         """ActInfHebbianSOM params function for Map"""
         return dict(dimension=dimension,
                     shape=shape,
-                    neighborhood_size = self.ET(-5e-3, neighborhood_size, 1),
+                    neighborhood_size = self.ET(-1e-3, neighborhood_size, 1.0),
                     learning_rate=self.ET(-1e-4, lr_init, 0.01),
                     # learning_rate=self.CT(lr_init),
                     noise_variance=z)
@@ -714,10 +720,15 @@ class ActInfHebbianSOM(ActInfModel):
                     # e_act = e_.reshape(e_shape)
                     # e_act
                     p_bar = np.dot(self.hebblink_filter.T, e_.reshape(e_shape))
+                    # # sparse
+                    # p_bar = self.hebblink_filter.T.dot(e_.reshape(e_shape))
+                    # print("p_bar", type(p_bar))
                 else:
                     p_bar = np.dot(self.hebblink_filter.T, self.filter_e.distances(e).flatten().reshape(e_shape))
                 p_bar_ = p_bar.copy()
                 p_bar = (p_bar == np.max(p_bar)) * 1.0
+                    
+                # print("p_bar", type(p_bar), type(p_bar_))
 
                 # # plotting
                 # ax1 = fig.add_subplot(411)
@@ -812,8 +823,10 @@ class ActInfHebbianSOM(ActInfModel):
                 dWnorm_ = 0.8 * dWnorm_ + 0.2 * dWnorm
                 # print ("dWnorm", dWnorm)
                 self.hebblink_filter += d_hebblink_filter
+            print("hebblink_filter type", type(self.hebblink_filter))
             print("np.linalg.norm(self.hebblink_filter, 2)", np.linalg.norm(self.hebblink_filter, 2))
             self.hebblink_filter /= np.linalg.norm(self.hebblink_filter, 2)
+            print("hebblink_filter type", type(self.hebblink_filter))
             # print(Z_err_norm)
             # print("%s.fit_hebb error p/p_bar %f" % (self.__class__.__name__, np.array(Z_err_norm)[:logidx].mean()))
             print("%s.fit_hebb |dW| = %f, |W| = %f, mean err = %f / %f" % (self.__class__.__name__, dWnorm_, w_norm, z_err_norm_, z_err_norm__))
@@ -983,7 +996,6 @@ def hebbsom_get_map_nodes(mdl, idim, odim):
 
 def plot_nodes_over_data_1d_components(X, Y, mdl):
     """one-dimensional plot of each components of X and Y together with those of SOM nodes for all i and o components"""
-    import matplotlib.gridspec as gridspec
     
     idim = X.shape[1]
     odim = Y.shape[1]
@@ -991,6 +1003,7 @@ def plot_nodes_over_data_1d_components(X, Y, mdl):
     e_nodes, p_nodes = hebbsom_get_map_nodes(mdl, idim, odim)
     
     fig1 = pl.figure()
+    fig1.suptitle("One-dimensional breakdown of SOM nodes per input dimension")
     numplots = idim + odim
     gs = gridspec.GridSpec(numplots, 1)
     for i in range(idim):
@@ -1055,6 +1068,7 @@ def plot_nodes_over_data_scattermatrix(X, Y, mdl):
 
     # get figure reference from axis and show
     fig2 = sm[0,0].get_figure()
+    fig2.suptitle("Predictions over data scattermatrix")
     fig2.show()
 
 def hebbsom_predict_full(X, Y, mdl):
@@ -1081,11 +1095,11 @@ def hebbsom_predict_full(X, Y, mdl):
 def plot_nodes_over_data_scattermatrix_hexbin(X, Y, mdl, predictions, distances, activities):
     """plot single components X over Y with SOM sample"""
     
-    import matplotlib.gridspec as gridspec
     idim = X.shape[1]
     odim = Y.shape[1]
     numplots = idim * odim + 2
     fig3 = pl.figure()
+    fig3.suptitle("Predictions over data xy scattermatrix/hexbin")
     gs = gridspec.GridSpec(idim, odim)
     fig3axes = []
     for i in range(idim):
@@ -1121,11 +1135,11 @@ def plot_nodes_over_data_scattermatrix_hexbin(X, Y, mdl, predictions, distances,
 def plot_hebbsom_links_distances_activations(X, Y, mdl, predictions, distances, activities):
     """plot the hebbian link matrix, and all node distances and activities for all inputs"""
     
-    import matplotlib.gridspec as gridspec
 
     hebblink_log = np.log(mdl.hebblink_filter.T + 1.0)
     
     fig4 = pl.figure()
+    fig4.suptitle("Debugging SOM: hebbian links, distances, activities")
     gs = gridspec.GridSpec(4, 1)
     # pl.plot(X, Y, "k.", alpha=0.5)
     # pl.subplot(numplots, 1, numplots-1)
@@ -1156,7 +1170,98 @@ def plot_hebbsom_links_distances_activations(X, Y, mdl, predictions, distances, 
     print("hebblink_log", hebblink_log)
     
     fig4.show()
+
+def plot_predictions_over_data(X, Y, mdl):
+    # plot prediction
+    idim = X.shape[1]
+    odim = Y.shape[1]
+    numsamples = 2
+    Y_samples = []
+    for i in range(numsamples):
+        Y_samples.append(mdl.predict(X))
+    # print("Y_samples[0]", Y_samples[0])
+
+    fig = pl.figure()
+    fig.suptitle("Predictions over data xy (numsamples = %d)" % numsamples)
+    gs = gridspec.GridSpec(odim, 1)
     
+    for i in range(odim):
+        ax = fig.add_subplot(gs[i])
+        target     = Y[:,i]
+        
+        ax.plot(X, target, "k.", label="Y_", alpha=0.5)
+        for j in range(numsamples):
+            prediction = Y_samples[j][:,i]
+            # pl.plot(prediction, target, "r.", label="Y_", alpha=0.25)
+            ax.plot(X, prediction, "r.", label="Y_", alpha=0.25)
+        # get limits
+        xlim = ax.get_xlim()
+        ylim = ax.get_ylim()
+        error = target - prediction
+        mse   = np.mean(np.square(error))
+        mae   = np.mean(np.abs(error))
+        xran = xlim[1] - xlim[0]
+        yran = ylim[1] - ylim[0]
+        ax.text(xlim[0] + xran * 0.1, ylim[0] + yran * 0.3, "mse = %f" % mse)
+        ax.text(xlim[0] + xran * 0.1, ylim[0] + yran * 0.5, "mae = %f" % mae)
+    fig.show()
+
+
+def plot_predictions_over_data_ts(X, Y, mdl):
+    # plot prediction
+    idim = X.shape[1]
+    odim = Y.shape[1]
+    numsamples = 10
+    Y_samples = []
+    for i in range(numsamples):
+        Y_samples.append(mdl.predict(X))
+    # print("Y_samples[0]", Y_samples[0])
+
+    fig = pl.figure()
+    fig.suptitle("Predictions over data timeseries (numsamples = %d)" % numsamples)
+    gs = gridspec.GridSpec(odim, 1)
+    
+    for i in range(odim):
+        # pl.subplot(odim, 2, (i*2)+1)
+        ax = fig.add_subplot(gs[i])
+        target     = Y[:,i]
+        ax.plot(target, "k.", label="Y_", alpha=0.5)
+
+        # pl.subplot(odim, 2, (i*2)+2)
+        # prediction = Y_[:,i]
+        
+        # pl.plot(target, "k.", label="Y")
+        mses = []
+        maes = []
+        errors = []
+        for j in range(numsamples):
+            prediction = Y_samples[j][:,i]
+            error = target - prediction
+            errors.append(error)
+            mse   = np.mean(np.square(error))
+            mae   = np.mean(np.abs(error))
+            mses.append(mse)
+            maes.append(mae)
+            # pl.plot(prediction, target, "r.", label="Y_", alpha=0.25)
+            ax.plot(prediction, "r.", label="Y_", alpha=0.25)
+
+        errors = np.asarray(errors)
+        print("errors.shape", errors.shape)
+        aes = np.min(np.abs(errors), axis=0)
+        ses = np.min(np.square(errors), axis=0)
+        mae = np.mean(aes)
+        mse = np.mean(ses)
+                
+        # get limits
+        xlim = ax.get_xlim()
+        ylim = ax.get_ylim()
+        xran = xlim[1] - xlim[0]
+        yran = ylim[1] - ylim[0]
+        ax.text(xlim[0] + xran * 0.1, ylim[0] + yran * 0.3, "mse = %f" % mse)
+        ax.text(xlim[0] + xran * 0.1, ylim[0] + yran * 0.5, "mae = %f" % mae)
+        # pl.plot(X[:,i], Y[:,i], "k.", alpha=0.25)
+    fig.show()
+        
 def get_class_from_name(name = "KNN"):
     if name == "KNN":
         cls = ActInfKNN
@@ -1220,7 +1325,6 @@ def test_model(args):
     X /= X_std
     Y -= Y_mu
     Y /= Y_std
-        
 
     if args.modelclass == "GMM":
         dim = idim + odim
@@ -1245,7 +1349,6 @@ def test_model(args):
     
     mdl.fit(X, Y)
     
-
     if args.modelclass == "HebbSOM":
 
         plot_nodes_over_data_1d_components(X, Y, mdl)
@@ -1254,6 +1357,10 @@ def test_model(args):
 
         predictions, distances, activities = hebbsom_predict_full(X, Y, mdl)
     
+        plot_predictions_over_data(X, Y, mdl)
+        
+        plot_predictions_over_data_ts(X, Y, mdl)
+        
         plot_nodes_over_data_scattermatrix_hexbin(X, Y, mdl, predictions, distances, activities)
                 
         plot_hebbsom_links_distances_activations(X, Y, mdl, predictions, distances, activities)
@@ -1261,40 +1368,14 @@ def test_model(args):
         # nodes_e = filter_e.map.neurons[:,:,i]
         # nodes_p = filter_p.map.neurons[:,:,i]
         # pl.plot(nodes, filter_e.map.neurons[:,:,1], "ko", alpha=0.5, ms=10)
-        pl.show()
+        # pl.show()
     
     else:
-        # plot prediction
-        numsamples = 2
-        Y_samples = []
-        for i in range(numsamples):
-            Y_samples.append(mdl.predict(X))
-        # print("Y_samples[0]", Y_samples[0])
-    
-        for i in range(odim):
-            pl.subplot(odim, 1, i+1)
-            target     = Y[:,i]
-            # prediction = Y_[:,i]
-            
-            # pl.plot(target, "k.", label="Y")
-            for j in range(numsamples):
-                prediction = Y_samples[j][:,i]
-                # pl.plot(prediction, target, "r.", label="Y_", alpha=0.25)
-                pl.plot(X, prediction, "r.", label="Y_", alpha=0.25)
-                pl.plot(X, target, "g.", label="Y_", alpha=0.25)
-            # get limits
-            xlim = pl.xlim()
-            ylim = pl.ylim()
-            error = target - prediction
-            mse   = np.mean(np.square(error))
-            mae   = np.mean(np.abs(error))
-            xran = xlim[1] - xlim[0]
-            yran = ylim[1] - ylim[0]
-            pl.text(xlim[0] + xran * 0.1, ylim[0] + yran * 0.3, "mse = %f" % mse)
-            pl.text(xlim[0] + xran * 0.1, ylim[0] + yran * 0.5, "mae = %f" % mae)
-            # pl.plot(X[:,i], Y[:,i], "k.", alpha=0.25)
-        # pl.plot(Y)
-        pl.show()
+
+        plot_predictions_over_data_ts(X, Y, mdl)
+        
+        plot_predictions_over_data(X, Y, mdl)
+    pl.show()
     
         
 if __name__ == "__main__":
