@@ -28,6 +28,7 @@ issues:
 from __future__ import print_function
 
 import numpy as np
+import scipy.sparse as sparse
 import pylab as pl
 import cPickle
 
@@ -533,6 +534,7 @@ class ActInfHebbianSOM(ActInfModel):
         # hebblink_filter = np.random.uniform(-1e-4, 1e-4, (np.prod(filter_e.map._shape), np.prod(filter_p.map._shape)))
         self.hebblink_som    = np.zeros((np.prod(self.som_e._shape), np.prod(self.som_p._shape)))
         self.hebblink_filter = np.zeros((np.prod(self.filter_e.map._shape), np.prod(self.filter_p.map._shape)))
+        # self.hebblink_filter = np.random.normal(0, 1e-6, (np.prod(self.filter_e.map._shape), np.prod(self.filter_p.map._shape)))
         self.hebblink_use_activity = True # use activation or distance
         
         # Hebbian learning rate
@@ -810,6 +812,8 @@ class ActInfHebbianSOM(ActInfModel):
                 dWnorm_ = 0.8 * dWnorm_ + 0.2 * dWnorm
                 # print ("dWnorm", dWnorm)
                 self.hebblink_filter += d_hebblink_filter
+            print("np.linalg.norm(self.hebblink_filter, 2)", np.linalg.norm(self.hebblink_filter, 2))
+            self.hebblink_filter /= np.linalg.norm(self.hebblink_filter, 2)
             # print(Z_err_norm)
             # print("%s.fit_hebb error p/p_bar %f" % (self.__class__.__name__, np.array(Z_err_norm)[:logidx].mean()))
             print("%s.fit_hebb |dW| = %f, |W| = %f, mean err = %f / %f" % (self.__class__.__name__, dWnorm_, w_norm, z_err_norm_, z_err_norm__))
@@ -968,8 +972,191 @@ class ActInfHebbianSOM(ActInfModel):
     
 # MDN model: karpathy, hardmaru, amjad, cbonnett, edward
 
+def hebbsom_get_map_nodes(mdl, idim, odim):
+    e_nodes = mdl.filter_e.map.neurons
+    p_nodes = mdl.filter_p.map.neurons
+    print(e_nodes.shape, p_nodes.shape)
+    e_nodes = e_nodes.reshape((-1,idim))
+    p_nodes = p_nodes.reshape((-1,odim))
+    print(e_nodes.shape, p_nodes.shape)
+    return (e_nodes, p_nodes)
 
+def plot_nodes_over_data_1d_components(X, Y, mdl):
+    """one-dimensional plot of each components of X and Y together with those of SOM nodes for all i and o components"""
+    import matplotlib.gridspec as gridspec
+    
+    idim = X.shape[1]
+    odim = Y.shape[1]
+    
+    e_nodes, p_nodes = hebbsom_get_map_nodes(mdl, idim, odim)
+    
+    fig1 = pl.figure()
+    numplots = idim + odim
+    gs = gridspec.GridSpec(numplots, 1)
+    for i in range(idim):
+        ax = fig1.add_subplot(gs[i,0])
+        ax.plot(X[:,i], np.ones_like(X[:,i]) * -10, "ko", alpha=0.33)
+        ax.hist(X[:,i], bins=20)
+        for j,node in enumerate(e_nodes[:,i]):
+            # print("node", j, node)
+            ax.plot([node], [-25.0], "ro", alpha=0.33, markersize=10)
+            ax.text(node, -25.0, "n%d" % j, fontsize=6)
+        # pl.plot(e_nodes[:,i], np.zeros_like(e_nodes[:,i]), "ro", alpha=0.33, markersize=10)
+    for i in range(idim, numplots):
+        ax = fig1.add_subplot(gs[i,0])
+        ax.plot(Y[:,i-idim], np.ones_like(Y[:,i-idim]) * -10, "ko", alpha=0.33)
+        ax.hist(Y[:,i-idim], bins=20)
+        for j,node in enumerate(p_nodes[:,i-idim]):
+            # print("node", j, node)
+            ax.plot([node], [0.0], "ro", alpha=0.33, markersize=10)
+            ax.text(node, 0.0, "n%d" % j, fontsize=6)
+        # pl.plot(p_nodes[:,i-idim], np.zeros_like(p_nodes[:,i-idim]), "ro", alpha=0.33, markersize=10)
+    fig1.show()
+    # pl.show()
 
+def plot_nodes_over_data_scattermatrix(X, Y, mdl):
+    """plot input data distribution and SOM node locations as scattermatrix all X comps over all Y comps
+    X, Y, e_nodes, p_nodes"""
+    
+    import pandas as pd
+    from pandas.tools.plotting import scatter_matrix
+
+    idim = X.shape[1]
+    odim = Y.shape[1]
+    numplots = idim + odim
+
+    e_nodes, p_nodes = hebbsom_get_map_nodes(mdl, idim, odim)
+    
+    dfcols = []
+    dfcols += ["e_%d" % i for i in range(idim)]
+    dfcols += ["p_%d" % i for i in range(odim)]
+
+    # X_plus_e_nodes = np.vstack((X, e_nodes))
+    # Y_plus_p_nodes = np.vstack((Y, p_nodes))
+
+    # df = pd.DataFrame(np.hstack((X_plus_e_nodes, Y_plus_p_nodes)), columns=dfcols)
+    df = pd.DataFrame(np.hstack((X, Y)), columns=dfcols)
+    sm = scatter_matrix(df, alpha=0.2, figsize=(5,5), diagonal="hist")
+    print("sm = %s" % (sm))
+    # loop over i/o components
+    idims = range(idim)
+    odims = range(idim, idim+odim)
+    for i in range(numplots):
+        for j in range(numplots):
+            if i != j and i in idims and j in idims:
+                sm[i,j].plot(e_nodes[:,j], e_nodes[:,i], "ro", alpha=0.5, markersize=8)
+            if i != j and i in odims and j in odims:
+                sm[i,j].plot(p_nodes[:,j-idim], p_nodes[:,i-idim], "ro", alpha=0.5, markersize=8)
+            
+            # if i != j and i in idims and j in odims:
+            #     sm[i,j].plot(p_nodes[:,j-idim], e_nodes[:,i], "go", alpha=0.5, markersize=8)
+            # if i != j and i in odims and j in idims:
+            #     sm[i,j].plot(e_nodes[:,j], p_nodes[:,i-idim], "go", alpha=0.5, markersize=8)
+
+    # get figure reference from axis and show
+    fig2 = sm[0,0].get_figure()
+    fig2.show()
+
+def hebbsom_predict_full(X, Y, mdl):
+    distances = []
+    activities = []
+    predictions = np.zeros_like(Y)
+    # have to loop over single steps until we generalize predict function to also yield distances and activities
+    for h in range(X.shape[0]):
+        # X_ = (Y[h]).reshape((1, odim))
+        X_ = X[h]
+        # print("X_", X_.shape, X_)
+        # predict proprio 3D from extero 2D
+        predictions[h] = mdl.predict(X_)
+        # print("X_.shape = %s, %d" % (X_.shape, 0))
+        # print("prediction.shape = %s, %d" % (prediction.shape, 0))
+        distances.append(mdl.filter_e.distances(X_).flatten())
+        activities.append(mdl.filter_e.activity.flatten())
+        activities_sorted = activities[-1].argsort()
+        # print("Y[h]", h, Y[h].shape, prediction.shape)
+    return (predictions, distances, activities)
+    
+################################################################################
+# plot nodes over data with scattermatrix and data hexbin
+def plot_nodes_over_data_scattermatrix_hexbin(X, Y, mdl, predictions, distances, activities):
+    """plot single components X over Y with SOM sample"""
+    
+    import matplotlib.gridspec as gridspec
+    idim = X.shape[1]
+    odim = Y.shape[1]
+    numplots = idim * odim + 2
+    fig3 = pl.figure()
+    gs = gridspec.GridSpec(idim, odim)
+    fig3axes = []
+    for i in range(idim):
+        fig3axes.append([])
+        for o in range(odim):
+            fig3axes[i].append(fig3.add_subplot(gs[i,o]))
+    err = 0
+
+    # colsa = ["k", "r", "g", "c", "m", "y"]
+    # colsb = ["k", "r", "g", "c", "m", "y"]
+    colsa = ["k" for col in range(idim)]
+    colsb = ["r" for col in range(odim)]
+    for i in range(odim): # odim * 2
+        for j in range(idim):
+            # pl.subplot(numplots, 1, (i*idim)+j+1)
+            ax = fig3axes[j][i]
+            # target = Y[h,i]
+            # X__ = X_[j] # X[h,j]
+            # err += np.sum(np.square(target - prediction))
+            # ax.plot(X__, [target], colsa[j] + ".", alpha=0.25, label="target_%d" % i)
+            # ax.plot(X__, [prediction[0,i]], colsb[j] + "o", alpha=0.25, label="pred_%d" % i)
+            # ax.plot(X[:,j], Y[:,i], colsa[j] + ".", alpha=0.25, label="target_%d" % i)
+            ax.hexbin(X[:,j], Y[:,i], gridsize = 20, alpha=0.75, cmap=pl.get_cmap("gray"))
+            ax.plot(X[:,j], predictions[:,i], colsb[j] + "o", alpha=0.15, label="pred_%d" % i, markersize=8)
+            # pred1 = mdl.filter_e.neuron(mdl.filter_e.flat_to_coords(activities_sorted[-1]))
+            # ax.plot(X__, [pred1], "ro", alpha=0.5)
+            # pred2 = mdl.filter_e.neuron(mdl.filter_e.flat_to_coords(activities_sorted[-2]))
+            # ax.plot(X__, [pred2], "ro", alpha=0.25)
+    print("accum total err = %f" % (err / X.shape[0] / (idim * odim)))
+    fig3.show()
+        
+
+def plot_hebbsom_links_distances_activations(X, Y, mdl, predictions, distances, activities):
+    """plot the hebbian link matrix, and all node distances and activities for all inputs"""
+    
+    import matplotlib.gridspec as gridspec
+
+    hebblink_log = np.log(mdl.hebblink_filter.T + 1.0)
+    
+    fig4 = pl.figure()
+    gs = gridspec.GridSpec(4, 1)
+    # pl.plot(X, Y, "k.", alpha=0.5)
+    # pl.subplot(numplots, 1, numplots-1)
+    ax1 = fig4.add_subplot(gs[0])
+    # im1 = ax1.imshow(mdl.hebblink_filter, interpolation="none", cmap=pl.get_cmap("gray"))
+    im1 = ax1.pcolormesh(hebblink_log, cmap=pl.get_cmap("gray"))
+    ax1.set_xlabel("in (e)")
+    ax1.set_ylabel("out (p)")
+    cbar = fig4.colorbar(mappable = im1, ax=ax1, orientation="horizontal")
+    
+    ax2 = fig4.add_subplot(gs[1])
+
+    distarray = np.array(distances)
+    print("distarray.shape", distarray.shape)
+    pcm = ax2.pcolormesh(distarray.T)
+    cbar = fig4.colorbar(mappable = pcm, ax=ax2, orientation="horizontal")
+    
+    # pl.subplot(numplots, 1, numplots)
+    ax3 = fig4.add_subplot(gs[2])
+    actarray = np.array(activities)
+    print("actarray.shape", actarray.shape)
+    pcm = ax3.pcolormesh(actarray.T)
+    cbar = fig4.colorbar(mappable = pcm, ax=ax3, orientation="horizontal")
+
+    ax4 = fig4.add_subplot(gs[3])
+    ax4.plot(hebblink_log.flatten())
+
+    print("hebblink_log", hebblink_log)
+    
+    fig4.show()
+    
 def get_class_from_name(name = "KNN"):
     if name == "KNN":
         cls = ActInfKNN
@@ -1060,153 +1247,17 @@ def test_model(args):
     
 
     if args.modelclass == "HebbSOM":
-        e_nodes = mdl.filter_e.map.neurons
-        p_nodes = mdl.filter_p.map.neurons
-        print(e_nodes.shape, p_nodes.shape)
-        e_nodes = e_nodes.reshape((-1,idim))
-        p_nodes = p_nodes.reshape((-1,odim))
-        print(e_nodes.shape, p_nodes.shape)
-        # print(e_nodes, p_nodes)
 
-        import matplotlib.gridspec as gridspec
-        # one-dimensional plot of components of inputs together with those of SOM nodes for all i and o components
-        fig1 = pl.figure()
-        numplots = idim + odim
-        gs = gridspec.GridSpec(numplots, 1)
-        for i in range(idim):
-            ax = fig1.add_subplot(gs[i,0])
-            ax.plot(X[:,i], np.ones_like(X[:,i]) * -10, "ko", alpha=0.33)
-            ax.hist(X[:,i], bins=20)
-            for j,node in enumerate(e_nodes[:,i]):
-                # print("node", j, node)
-                ax.plot([node], [-25.0], "ro", alpha=0.33, markersize=10)
-                ax.text(node, -25.0, "n%d" % j, fontsize=6)
-            # pl.plot(e_nodes[:,i], np.zeros_like(e_nodes[:,i]), "ro", alpha=0.33, markersize=10)
-        for i in range(idim, numplots):
-            ax = fig1.add_subplot(gs[i,0])
-            ax.plot(Y[:,i-idim], np.ones_like(Y[:,i-idim]) * -10, "ko", alpha=0.33)
-            ax.hist(Y[:,i-idim], bins=20)
-            for j,node in enumerate(p_nodes[:,i-idim]):
-                # print("node", j, node)
-                ax.plot([node], [0.0], "ro", alpha=0.33, markersize=10)
-                ax.text(node, 0.0, "n%d" % j, fontsize=6)
-            # pl.plot(p_nodes[:,i-idim], np.zeros_like(p_nodes[:,i-idim]), "ro", alpha=0.33, markersize=10)
-        fig1.show()
-        # pl.show()
-
+        plot_nodes_over_data_1d_components(X, Y, mdl)
         
-        # plot input data distribution and SOM node locations as scattermatrix all X comps over all Y comps
-        # X, Y, e_nodes, p_nodes
-        import pandas as pd
-        from pandas.tools.plotting import scatter_matrix
-        dfcols = []
-        dfcols += ["e_%d" % i for i in range(X.shape[1])]
-        dfcols += ["p_%d" % i for i in range(Y.shape[1])]
+        plot_nodes_over_data_scattermatrix(X, Y, mdl)
 
-        # X_plus_e_nodes = np.vstack((X, e_nodes))
-        # Y_plus_p_nodes = np.vstack((Y, p_nodes))
-
-        # df = pd.DataFrame(np.hstack((X_plus_e_nodes, Y_plus_p_nodes)), columns=dfcols)
-        df = pd.DataFrame(np.hstack((X, Y)), columns=dfcols)
-        sm = scatter_matrix(df, alpha=0.2, figsize=(5,5), diagonal="hist")
-        print("sm = %s" % (sm))
-        # loop over i/o components
-        idims = range(idim)
-        odims = range(idim, idim+odim)
-        for i in range(numplots):
-            for j in range(numplots):
-                if i != j and i in idims and j in idims:
-                    sm[i,j].plot(e_nodes[:,j], e_nodes[:,i], "ro", alpha=0.5, markersize=8)
-                if i != j and i in odims and j in odims:
-                    sm[i,j].plot(p_nodes[:,j-idim], p_nodes[:,i-idim], "ro", alpha=0.5, markersize=8)
+        predictions, distances, activities = hebbsom_predict_full(X, Y, mdl)
+    
+        plot_nodes_over_data_scattermatrix_hexbin(X, Y, mdl, predictions, distances, activities)
                 
-                # if i != j and i in idims and j in odims:
-                #     sm[i,j].plot(p_nodes[:,j-idim], e_nodes[:,i], "go", alpha=0.5, markersize=8)
-                # if i != j and i in odims and j in idims:
-                #     sm[i,j].plot(e_nodes[:,j], p_nodes[:,i-idim], "go", alpha=0.5, markersize=8)
-
-        # get figure reference from axis and show
-        fig2 = sm[0,0].get_figure()
-        fig2.show()
-
-
-        ################################################################################
-        # plot single components X over Y with SOM sample        
-        distances = []
-        activities = []
-        numplots = idim * odim + 2
-        fig3 = pl.figure()
-        gs = gridspec.GridSpec(idim, odim)
-        fig3axes = []
-        for i in range(idim):
-            fig3axes.append([])
-            for o in range(odim):
-                fig3axes[i].append(fig3.add_subplot(gs[i,o]))
-
-        err = 0
-        predictions = np.zeros_like(Y)
-        for h in range(X.shape[0]):
-            # X_ = (Y[h]).reshape((1, odim))
-            X_ = X[h]
-            # print("X_", X_.shape, X_)
-            # predict proprio 3D from extero 2D
-            predictions[h] = mdl.predict(X_)
-            # print("X_.shape = %s, %d" % (X_.shape, 0))
-            # print("prediction.shape = %s, %d" % (prediction.shape, 0))
-            distances.append(mdl.filter_e.distances(X_).flatten())
-            activities.append(mdl.filter_e.activity.flatten())
-            activities_sorted = activities[-1].argsort()
-            # print("Y[h]", h, Y[h].shape, prediction.shape)
-            
-        # colsa = ["k", "r", "g", "c", "m", "y"]
-        # colsb = ["k", "r", "g", "c", "m", "y"]
-        colsa = ["k" for col in range(idim)]
-        colsb = ["r" for col in range(odim)]
-        for i in range(odim): # odim * 2
-            for j in range(idim):
-                # pl.subplot(numplots, 1, (i*idim)+j+1)
-                ax = fig3axes[j][i]
-                # target = Y[h,i]
-                # X__ = X_[j] # X[h,j]
-                # err += np.sum(np.square(target - prediction))
-                # ax.plot(X__, [target], colsa[j] + ".", alpha=0.25, label="target_%d" % i)
-                # ax.plot(X__, [prediction[0,i]], colsb[j] + "o", alpha=0.25, label="pred_%d" % i)
-                # ax.plot(X[:,j], Y[:,i], colsa[j] + ".", alpha=0.25, label="target_%d" % i)
-                ax.hexbin(X[:,j], Y[:,i], gridsize = 20, alpha=0.75, cmap=pl.get_cmap("gray"))
-                ax.plot(X[:,j], predictions[:,i], colsb[j] + "o", alpha=0.15, label="pred_%d" % i, markersize=8)
-                # pred1 = mdl.filter_e.neuron(mdl.filter_e.flat_to_coords(activities_sorted[-1]))
-                # ax.plot(X__, [pred1], "ro", alpha=0.5)
-                # pred2 = mdl.filter_e.neuron(mdl.filter_e.flat_to_coords(activities_sorted[-2]))
-                # ax.plot(X__, [pred2], "ro", alpha=0.25)
-        print("accum total err = %f" % (err / X.shape[0] / (idim * odim)))
-        fig3.show()
-        
-                    
-        fig4 = pl.figure()
-        gs = gridspec.GridSpec(3, 1)
-        # pl.plot(X, Y, "k.", alpha=0.5)
-        # pl.subplot(numplots, 1, numplots-1)
-        ax1 = fig4.add_subplot(gs[0])
-        # im1 = ax1.imshow(mdl.hebblink_filter, interpolation="none", cmap=pl.get_cmap("gray"))
-        im1 = ax1.pcolormesh(mdl.hebblink_filter.T, cmap=pl.get_cmap("gray"))
-        ax1.set_xlabel("in (e)")
-        ax1.set_ylabel("out (p)")
-        cbar = fig4.colorbar(mappable = im1, ax=ax1, orientation="horizontal")
-        
-        ax2 = fig4.add_subplot(gs[1])
-
-        distarray = np.array(distances)
-        print("distarray.shape", distarray.shape)
-        pcm = ax2.pcolormesh(distarray.T)
-        cbar = fig4.colorbar(mappable = pcm, ax=ax2, orientation="horizontal")
-        
-        # pl.subplot(numplots, 1, numplots)
-        ax3 = fig4.add_subplot(gs[2])
-        actarray = np.array(activities)
-        print("actarray.shape", actarray.shape)
-        pcm = ax3.pcolormesh(actarray.T)
-        cbar = fig4.colorbar(mappable = pcm, ax=ax3, orientation="horizontal")
-
+        plot_hebbsom_links_distances_activations(X, Y, mdl, predictions, distances, activities)
+                            
         # nodes_e = filter_e.map.neurons[:,:,i]
         # nodes_p = filter_p.map.neurons[:,:,i]
         # pl.plot(nodes, filter_e.map.neurons[:,:,1], "ko", alpha=0.5, ms=10)
