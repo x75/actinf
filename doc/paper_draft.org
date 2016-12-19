@@ -1,4 +1,5 @@
-#+TITLE: Active inference and predictive coding for learning in proprioceptive space
+#+TITLE: Predictive Processing Model for an Autonomous Agent
+
 #+AUTHOR: Guido, Bruno, Alejandra, Esau, Oswald
 
 #+OPTIONS: toc:nil
@@ -21,6 +22,9 @@ Short description of the project
 #+END_abstract
 
 * Notes
+** Titles
+ - Predictive Processing Model for an Autonomous Agent
+ - Active inference and predictive coding model
 ** control theory parallels
 
 i don't see this as a problem at all, to the contrary, it means if you
