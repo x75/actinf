@@ -29,7 +29,7 @@
 %% \usepackage{marvosym}
 %% \usepackage{multirow}
 %% \usepackage{subcaption}
-%% % \usepackage{subfigure}
+\usepackage[tight,footnotesize]{subfigure}
 %% \usepackage{textcomp}
 %% \usepackage{titling}
 %% \usepackage{wasysym}
@@ -284,12 +284,11 @@ We can take these three principles for the design of the proposed models:
 
 Long history, many models: control, development, RL, neuroscience, prediction and prediction error (residual), ...\ldots{}
 
-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \section{Proposed Models}
 \label{plan}
 
-\subsection{General Models}
+\subsection{Basis building blocks}
 
 First two basic models and their difference in terms of learning
 dynamics. Do any dynamic properties support or contradict biological
@@ -299,12 +298,17 @@ motor learning?
 
 The basic building block (BBB) contains an adaptive forward model
 (predictor) whose output is the BBB's output. We assume direct
-feedback from that module that the output is connected to. The BBB'
+feedback from the module that the output is connected to. The BBB'
 inputs are an explicit goal and the prediction error with respect to
 the last prediction at ${t-1}$. These inputs taken together encode the
 state. Thus the forward model should in principle be able to pick up
 on different relations depending on the state. Graphical
-representation is given in \autoref{fig:M1}.
+representation is given in \autoref{fig:M1}. The closed-loop dynamics
+of this model are described in detail in \autoref{sec:exprs_basic_ex_m1}.
+
+FIXME: Fundamental limitation: can only learn monotonic relationships so
+far. Show to fail, indicate amendment that can solve non-monotonic
+cases (by observing PE over time, by using reward modulation, ...).
 
 \begin{figure}
   \centering
@@ -317,13 +321,26 @@ representation is given in \autoref{fig:M1}.
 This modification of BBB M1 receives only the error as an input. The
 model's graph is shown in \autoref{fig:M2}. This model will not be
 able to distinguish between situations demanding different
-predictions.
+predictions. FIXME: It can be shown to fail when such a situation is produced
+by experiment design.
 
 \begin{figure}
   \centering
   \includegraphics[width=0.9\textwidth]{img/mdl_prediction_error_only.pdf}
   \caption{\label{fig:M2} Basic model M2.}
 \end{figure}
+
+\subsection{E2P}
+
+A third building block is the intermodal map, specifically mapping
+between an exteroceptive and the proprioceptive modality (thus
+E2P). We propose to realize this slightly differently from M1 /
+M2. The E2P module is bootstrapped by passively observing
+corresponding exteroceptive and proprioceptive data and learning those
+correspondences. Once bootstrapped, the E2P can be used to predict
+possibly ambigous proprioceptive configurations from the exeroceptive
+sensations they are believed to produce, meaning which have been
+observed in the past to do so.
 
 \subsection{Extended models connecting modalities}
 
@@ -334,7 +351,6 @@ and \ref{fig:basic2}). The only difference is how the
 predictive error is calculated for the propioceptive information ($Err_{Pi(t)}$).
 
 %\figtikz{fig:ltp}{fig_im_ltp}{Long term prediction}{0.9}
-
 
 \figone{fig:basic1}{Integral_v3}{Model A}{0.8}
 \figone{fig:basic2}{Integral_v4}{Model B}{0.8}
@@ -424,21 +440,152 @@ no learning / weight changes
 \section{Experiments}
 \label{sec:org347db7c}
 
-  \begin{itemize}
-  \item deploy models to different robotic systems: Nao, SimpleArm,
-    Pointmass, two-wheeled
-  \item timeseries analysis
-  \item learning transient (arbitrarily fast, see Tin + Poon)
-  \item explicitly map out the acquired models by sweeping the inputs and
-    record their outputs
-  \item what happens under perturbation?
-  \item long-term adaptation effects: are we only plastic or are we also
-    stable? do new adaptations overwrite previous ones? does a given
-    approximator become saturated (just think how critical weight
-    initialization in neural networks can be) in terms of its adaption
-    capacity?, can be enforced via decay schedules of learning rate
-    etc
-  \end{itemize}
+Notes for experiments:
+
+\begin{itemize}
+\item deploy models to different robotic systems: Nao, SimpleArm,
+  Pointmass, two-wheeled
+\item timeseries analysis
+\item learning transient (arbitrarily fast, see Tin + Poon)
+\item explicitly map out the acquired models by sweeping the inputs and
+  record their outputs
+\item what happens under perturbation?
+\item long-term adaptation effects: are we only plastic or are we also
+  stable? do new adaptations overwrite previous ones? does a given
+  approximator become saturated (just think how critical weight
+  initialization in neural networks can be) in terms of its adaption
+  capacity?, can be enforced via decay schedules of learning rate
+  etc
+\end{itemize}
+
+\subsection{Basic behavioural example M1}
+\label{sec:exprs_basic_ex_m1}
+
+\begin{itemize}
+\item Basic operation:
+  \autoref{fig:basic_op_200_knn}, \autoref{fig:basic_op_200_soesgp},
+  \autoref{fig:basic_op_1000_knn}, \autoref{fig:basic_op_1000_soesgp}
+  show variations on the basic operation theme. We are evaluating a
+  k-NN and a Gaussian Process based forward model each over 200 and
+  1000 timesteps interaction on a one-dimensional identity system. The
+  forward model starts off in a zero-state, the first prediction being
+  zero. Any resulting prediction error drives an adaptation on the
+  forward model output towards reduced error for a given goal, error
+  input pair. We sweep this
+  input space once at numsteps/2 and once at the end of the
+  experiment which demonstrates the change in the overall model
+  response.
+  \item Compare identity system with small aberration system: now we
+    can do the same for a 1D system while introducing aberrations in
+    the system's response function.
+  \item Failure under non-monotonicity: if the aberrations become
+    systemically non-monotonic the learning process fails (FIXME: at least I
+    predict that ;)
+\item How PE is low when revisiting previously observed
+  configurations: longterm PE plot of 10000 timesteps and averaged PE
+  in addition to instantaneous PE
+% \item operation using non-identity motor transfer function
+\end{itemize}
+    
+\begin{figure}
+  \begin{center}
+  \subfigure[System sweep response]{
+    \includegraphics[width=0.47\textwidth]{img/basic_op_id_200steps_knn/fig_001_scattermatrix_reduced.pdf}%
+    \label{fig:basic_op_200_knn_fig1}
+  }
+  \subfigure[Goal, prediction, error]{
+    \includegraphics[width=0.47\textwidth]{img/basic_op_id_200steps_knn/fig_003_aie_experiment_plot_basic.pdf}
+    \label{fig:basic_op_200_knn_fig2}
+  }
+  \subfigure[Model sweep t = 100]{
+    \includegraphics[width=0.47\textwidth]{img/basic_op_id_200steps_knn/fig_002_colormeshmatrix_reduced.pdf}
+    \label{fig:basic_op_200_knn_fig3}
+  }
+  \subfigure[Model sweep t = 200]{
+    \includegraphics[width=0.47\textwidth]{img/basic_op_id_200steps_knn/fig_004_colormeshmatrix_reduced.pdf}
+    \label{fig:basic_op_200_knn_fig4}
+  }
+  \end{center}
+  \caption{\label{fig:basic_op_200_knn}Basic operation 200 timesteps knn.}
+\end{figure}
+
+\begin{figure}
+  \begin{center}
+  \subfigure[System sweep response]{
+    \includegraphics[width=0.47\textwidth]{img/basic_op_id_200steps_soesgp/fig_001_scattermatrix_reduced.pdf}%
+    \label{fig:basic_op_200_soesgp_fig1}
+  }
+  \subfigure[Goal, prediction, error]{
+    \includegraphics[width=0.47\textwidth]{img/basic_op_id_200steps_soesgp/fig_003_aie_experiment_plot_basic.pdf}
+    \label{fig:basic_op_200_soesgp_fig2}
+  }
+  \subfigure[Model sweep t = 100]{
+    \includegraphics[width=0.47\textwidth]{img/basic_op_id_200steps_soesgp/fig_002_colormeshmatrix_reduced.pdf}
+    \label{fig:basic_op_200_soesgp_fig3}
+  }
+  \subfigure[Model sweep t = 200]{
+    \includegraphics[width=0.47\textwidth]{img/basic_op_id_200steps_soesgp/fig_004_colormeshmatrix_reduced.pdf}
+    \label{fig:basic_op_200_soesgp_fig4}
+  }
+  \end{center}
+  \caption{\label{fig:basic_op_200_soesgp}Basic operation 200 timesteps GP.}
+
+
+  
+\end{figure}
+\begin{figure}
+  \begin{center}
+  \subfigure[System sweep response]{
+    \includegraphics[width=0.47\textwidth]{img/basic_op_id_1000steps_knn/fig_001_scattermatrix_reduced.pdf}%
+    \label{fig:basic_op_1000_knn_fig1}
+  }
+  \subfigure[Goal, prediction, error]{
+    \includegraphics[width=0.47\textwidth]{img/basic_op_id_1000steps_knn/fig_003_aie_experiment_plot_basic.pdf}
+    \label{fig:basic_op_1000_knn_fig2}
+  }
+  \subfigure[Model sweep t = 500]{
+    \includegraphics[width=0.47\textwidth]{img/basic_op_id_1000steps_knn/fig_002_colormeshmatrix_reduced.pdf}
+    \label{fig:basic_op_1000_knn_fig3}
+  }
+  \subfigure[Model sweep t = 1000]{
+    \includegraphics[width=0.47\textwidth]{img/basic_op_id_1000steps_knn/fig_004_colormeshmatrix_reduced.pdf}
+    \label{fig:basic_op_1000_knn_fig4}
+  }
+  \end{center}
+  \caption{\label{fig:basic_op_1000_knn}Basic operation 1000 timesteps knn.}
+\end{figure}
+
+\begin{figure}
+  \begin{center}
+  \subfigure[System sweep response]{
+    \includegraphics[width=0.47\textwidth]{img/basic_op_id_1000steps_soesgp/fig_001_scattermatrix_reduced.pdf}%
+    \label{fig:basic_op_1000_soesgp_fig1}
+  }
+  \subfigure[Goal, prediction, error]{
+    \includegraphics[width=0.47\textwidth]{img/basic_op_id_1000steps_soesgp/fig_003_aie_experiment_plot_basic.pdf}
+    \label{fig:basic_op_1000_soesgp_fig2}
+  }
+  \subfigure[Model sweep t = 500]{
+    \includegraphics[width=0.47\textwidth]{img/basic_op_id_1000steps_soesgp/fig_002_colormeshmatrix_reduced.pdf}
+    \label{fig:basic_op_1000_soesgp_fig3}
+  }
+  \subfigure[Model sweep t = 1000]{
+    \includegraphics[width=0.47\textwidth]{img/basic_op_id_1000steps_soesgp/fig_004_colormeshmatrix_reduced.pdf}
+    \label{fig:basic_op_1000_soesgp_fig4}
+  }
+  \end{center}
+  \caption{\label{fig:basic_op_1000_soesgp}Basic operation 1000 timesteps GP.}
+
+
+  
+\end{figure}
+
+
+\subsection{Basic behavioural example M2}
+\label{sec:exprs_basic_ex_m2}
+\subsection{Basic behavioural example E2P}
+\label{sec:exprs_basic_ex_e2p}
+
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

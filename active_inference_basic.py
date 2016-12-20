@@ -1,10 +1,12 @@
 
 import argparse, cPickle, os
 from collections import OrderedDict
-from functools   import partial
+from functools   import partial # mhm :)
 
 import numpy as np
 import pylab as pl
+import matplotlib.gridspec as gridspec
+import pandas as pd
 
 from explauto import Environment
 from explauto.environment import environments
@@ -28,7 +30,12 @@ try:
 except ImportError, e:
     print "Couldn't import pypr.clustering.gmm", e
 
-# TODO: modify this code to use the GMM model from actinf_models.py
+SAVEPLOTS = True
+    
+# TODO: make fwd model aware of goal change to ignore old prediction error which is irrelevant for the new goal
+# TODO: make fwd model aware of it's learning state and wether it can advantageously accomodate new data or
+#       is fine to ignore it. Also: prune old data?
+    
 # TODO: variant 0 and 1: multiply error with (the sign of) local gradient of the function you're modelling for non-monotonic cases?
 #       need to plot behaviour for non-invertible functions
 # TODO: make custom models: do incremental fit and store history for
@@ -39,6 +46,8 @@ except ImportError, e:
 # TODO: compute PI,AIS,TE for goal->state, input->pred_error, s_pred->s to
 #       answer qu's like: how much is there to learn, how much is learned
 # TODO: pass pre-generated system into actinf machine, so we can use random robots with parameterized DoF, stiffness, force budget, DoF coupling coefficient
+
+# DONE: modify this code to use the GMM model from actinf_models.py (ca. 20161210)
 
 modes = [
     "test_models",
@@ -54,7 +63,8 @@ class ActiveInferenceExperiment(object):
     def __init__(self, mode = "type01_state_prediction_error",
                  model = "knn", numsteps = 1000, idim = None,
                  environment_str = "simplearm",
-                 goal_sample_interval = 50, e2pmodel = None):
+                 goal_sample_interval = 50, e2pmodel = None,
+                 saveplots = False):
         self.mode = mode
         self.model = model
 
@@ -62,11 +72,13 @@ class ActiveInferenceExperiment(object):
 
         # experiment settings
         self.numsteps = numsteps
+
+        self.saveplots = saveplots
         
         # intialize robot environment
         if environment_str == "simplearm":
             self.environment = Environment.from_configuration('simple_arm', 'low_dimensional')
-            self.environment.noise = 0.
+            self.environment.noise = 1e-9
             # dimensions
             if mode.startswith("type03_1"):
                 self.idim = self.environment.conf.m_ndims
@@ -187,9 +199,11 @@ class ActiveInferenceExperiment(object):
             self.rh_learn_proprio_hooks["hook04"] = self.lh_sample_discrete_uniform_goal
 
             # experiment loop hooks
+            # self.run_hooks["hook00"] = self.make_plot_system_function_and_exec # sweep system before learning
             self.run_hooks["hook01"] = partial(self.rh_learn_proprio, iter_start = 0, iter_end = self.numsteps)
             self.run_hooks["hook02"] = self.rh_learn_proprio_save
             # self.run_hooks["hook03"] = self.rh_check_for_model_and_map
+            self.run_hooks["hook99"] = self.experiment_plot
 
         elif mode == "type03_1_prediction_error":
             """active inference / predictive coding: most basic version (?), proprioceptive only
@@ -204,6 +218,7 @@ class ActiveInferenceExperiment(object):
             self.run_hooks["hook02"] = partial(self.rh_learn_proprio, iter_start = 0, iter_end = self.numsteps)
             self.run_hooks["hook03"] = self.rh_learn_proprio_save
             # self.run_hooks["hook04"] = self.rh_check_for_model_and_map
+            self.run_hooks["hook99"] = self.experiment_plot
                         
         elif mode == "type04_ext_prop":
             """run basic proprio learning, record extero/proprio data, fit probabilistic / multivalued model 'mm'
@@ -226,12 +241,79 @@ class ActiveInferenceExperiment(object):
             # self.run_hooks["hook06"] = partial(self.rh_e2p_sample_and_drive, iter_start = self.numsteps/2, iter_end = self.numsteps)
             self.run_hooks["hook07"] = partial(self.rh_learn_proprio, iter_start = self.numsteps/2, iter_end = self.numsteps)
             self.run_hooks["hook08"] = self.rh_e2p_sample_and_drive_plot
+            self.run_hooks["hook99"] = self.experiment_plot
             
         elif mode == "type05_multiple_models":
             self.run = self.run_type05_multiple_models
-            
+
+        elif mode == "basic_operation_1D_M1":
+            """Experiment: Basic operation M1 on 1-dimensional data"""
+
+            # learning loop hooks
+            self.rh_learn_proprio_hooks["hook00"] = self.lh_sample_discrete_uniform_goal
+            self.rh_learn_proprio_hooks["hook01"] = self.lh_learn_proprio_base_0
+            self.rh_learn_proprio_hooks["hook02"] = self.lh_learn_proprio_e2p2e
+            self.rh_learn_proprio_hooks["hook03"] = self.lh_do_logging
+
+            # experiment loop hooks
+            self.run_hooks["hook00"] = self.make_plot_system_function_and_exec # sweep system before learning
+            self.run_hooks["hook01"] = partial(self.rh_learn_proprio, iter_start = 0, iter_end = self.numsteps/2)
+            self.run_hooks["hook02"] = self.rh_learn_proprio_save
+            self.run_hooks["hook03"] = self.make_plot_model_function_and_exec # sweep model after learning
+            # self.run_hooks["hook03"] = self.rh_check_for_model_and_map
+            self.run_hooks["hook05"] = partial(self.rh_learn_proprio, iter_start = self.numsteps/2, iter_end = self.numsteps)
+            self.run_hooks["hook06"] = self.rh_learn_proprio_save
+            self.run_hooks["hook07"] = self.experiment_plot_basic # plot experiment timeseries illustrative of operation
+            self.run_hooks["hook99"] = self.make_plot_model_function_and_exec # sweep model after learning
+                        
+        elif mode == "plot_system":
+            # wow, functools
+            self.make_plot_system_function_and_exec()
+                        
         else:
             print "FAIL: unknown mode, choose from %s" % (", ".join(modes))
+
+    def make_plot_system_function_and_exec(self):
+        """create specific dictionary of functions to be passed to composition"""
+        funcdict = OrderedDict()
+        # create sweep input data
+        funcdict["hook01"] = self.rh_system_generate_sweep_input
+        # sweep and create output data
+        funcdict["hook02"] = self.rh_system_sweep
+        # plot result
+        funcdict["hook03"] = self.rh_system_plot
+
+        f = self.make_function_from_hooks(funcdict)
+        f(0)
+        # return f
+            
+    def make_plot_model_function_and_exec(self):
+        """create specific dictionary of functions to be passed to composition"""
+        assert hasattr(self, "mdl")
+        
+        funcdict = OrderedDict()
+        # create sweep input data
+        funcdict["hook01"] = self.rh_model_generate_sweep_input
+        # sweep and create output data
+        funcdict["hook02"] = self.rh_model_sweep
+        # plot result
+        funcdict["hook03"] = self.rh_model_plot
+
+        f = self.make_function_from_hooks(funcdict)
+        f(0)
+        # return f
+        
+    def make_function_from_hooks(self, hookdict):
+        """return a single function composed of hooks in the dictionary (ordered), gleaned from
+        https://mathieularose.com/function-composition-in-python/"""
+        # print dir(hookdict)
+        # for k in hookdict.keys():
+        #     v = hookdict[k]
+        #     print "make_function_from_hooks k = %s, v = %s" % (k, v)
+        # return functools.reduce(lambda f, g: lambda x: f(g(x)), hookdict.values(), lambda x: x)
+        myfuncs = hookdict.values()
+        myfuncs.reverse()
+        return reduce(lambda f, g: lambda x: f(g()), myfuncs, lambda x: x)
 
     def rh_e2p_change_goal_sampling(self):
         self.rh_learn_proprio_hooks["hook04"] = self.sample_discrete_from_extero
@@ -291,6 +373,53 @@ class ActiveInferenceExperiment(object):
     ################################################################################
     # hooks
 
+    # system sweep hooks
+    def rh_system_generate_sweep_input(self):
+        """generate system inputs for grid sweep"""
+        # create meshgrid over proprio dimensions
+        sweepsteps = 21
+        dim_axes = [np.linspace(self.environment.conf.m_mins[i], self.environment.conf.m_maxs[i], sweepsteps) for i in range(self.environment.conf.m_ndims)]
+        full_axes = np.meshgrid(*tuple(dim_axes), indexing='ij')
+
+        # print "dim_axes", dim_axes
+        # print "full_axes", len(full_axes)
+        # print "full_axes", full_axes
+
+        for i in range(len(full_axes)):
+            print i, full_axes[i].shape
+            print i, full_axes[i].flatten()
+
+        # return proxy
+        self.X_system_sweep = np.vstack([full_axes[i].flatten() for i in range(len(full_axes))]).T
+
+    def rh_system_sweep(self):
+        """sweep the system by activating it on input grid"""
+        assert hasattr(self, "X_system_sweep")
+        self.Y_system_sweep = self.environment.compute_motor_command(self.X_system_sweep)
+        
+    def rh_system_plot(self):
+        """prepare and plot system outputs over input variations from sweep"""
+        assert hasattr(self, "X_system_sweep")
+        assert hasattr(self, "Y_system_sweep")
+
+        print "%s.rh_plot_system sweepsteps = %d" % (self.__class__.__name__, self.X_system_sweep.shape[0])
+        print "%s.rh_plot_system environment = %s" % (self.__class__.__name__, self.environment)
+        print "%s.rh_plot_system environment proprio dims = %d" % (self.__class__.__name__, self.environment.conf.m_ndims)
+        
+        scatter_data_raw   = np.hstack((self.X_system_sweep, self.Y_system_sweep))
+        scatter_data_cols  = ["X%d" % i for i in range(self.X_system_sweep.shape[1])]
+        scatter_data_cols += ["Y%d" % i for i in range(self.Y_system_sweep.shape[1])]
+        print "scatter_data_raw", scatter_data_raw.shape
+        # df = pd.DataFrame(scatter_data_raw, columns=["x_%d" % i for i in range(scatter_data_raw.shape[1])])
+        df = pd.DataFrame(scatter_data_raw, columns=scatter_data_cols)
+
+        # plot_scattermatrix(df)
+        plot_scattermatrix_reduced(df)
+
+    ################################################################################
+    # model sweep hooks
+    
+        
     # map a model
     def rh_check_for_model_and_map(self):
         if os.path.exists(self.mdl_pkl):
@@ -349,7 +478,7 @@ class ActiveInferenceExperiment(object):
         
         # compute target for the prediction error driven forward model
         # if i % 10 == 0: # play with decreased update rates
-        self.y_ = self.S_prop_pred - (self.E_prop_pred * 0.5)
+        self.y_ = self.S_prop_pred - (self.E_prop_pred * 0.33)
         # FIXME: what is the target if there is no trivial mapping of the error?
         # print "self.y_", self.y_
 
@@ -684,48 +813,59 @@ class ActiveInferenceExperiment(object):
                 # goal = np.random.uniform(-np.pi/2, np.pi/2, (1, environment.conf.m_ndims))
                 self.goal_prop = np.random.uniform(self.environment.conf.m_mins, self.environment.conf.m_maxs, (1, self.odim))
 
-    ################################################################################
-    def map_model_type03_goal_prediction_error(self):
-        """plot model output over model input sweep"""
-        from mpl_toolkits.mplot3d import Axes3D
-        doplot_scattermatrix = False
-        
-        # turn off interactive mode from explauto
-        pl.ioff()
-
+    def rh_model_generate_sweep_input(self):
         # sweep error and record output
         # ERROR =
         # meshgrid resolution
+        sweepsteps = 21
+        dim_axes = [np.linspace(self.environment.conf.s_mins[i], self.environment.conf.s_maxs[i], sweepsteps) for i in range(self.environment.conf.s_ndims)]
+        full_axes = np.meshgrid(*tuple(dim_axes), indexing='ij')
+
+        # print "dim_axes", dim_axes
+        # print "full_axes", len(full_axes)
+        # print "full_axes", full_axes
+
+        for i in range(len(full_axes)):
+            print i, full_axes[i].shape
+            print i, full_axes[i].flatten()
+
+        # return proxy
+        error_grid = np.vstack([full_axes[i].flatten() for i in range(len(full_axes))])
+
+        print "error_grid", error_grid.shape
         numgrid = 5
 
-        print "%s.map_model_type03_goal_prediction_error self.mdl.idim = %d, self.mdl.odim = %s" % (self.__class__.__name__, self.mdl.idim, self.mdl.odim)
+        # print "%s.map_model_type03_goal_prediction_error self.mdl.idim = %d, self.mdl.odim = %s" % (self.__class__.__name__, self.mdl.idim, self.mdl.odim)
 
-        # construct linear axes for input sweep, goal assumed equal odim / motor dim
-        # x_ = [np.linspace(-1., 1., numgrid) for i in range(self.mdl.odim))
+        # # construct linear axes for input sweep, goal assumed equal odim / motor dim
+        # # x_ = [np.linspace(-1., 1., numgrid) for i in range(self.mdl.odim))
 
-        # get meshgrid from linear axes
-        # x, y, z = np.meshgrid(x_, y_, z_, indexing='ij')
+        # # get meshgrid from linear axes
+        # # x, y, z = np.meshgrid(x_, y_, z_, indexing='ij')
         
-        x_ = np.linspace(-1., 1., numgrid)
-        y_ = np.linspace(-1., 1., numgrid)
-        z_ = np.linspace(-1., 1., numgrid)
+        # x_ = np.linspace(-1., 1., numgrid)
+        # y_ = np.linspace(-1., 1., numgrid)
+        # z_ = np.linspace(-1., 1., numgrid)
 
-        # meshgrid from axes and resolution
-        x, y, z = np.meshgrid(x_, y_, z_, indexing='ij')
-        # print "x.shape", x.shape
-        # print "x", x.flatten()
-        # print "y", y.flatten()
-        # print "z", z.flatten()
-        # combined grid
-        error_grid = np.vstack((x.flatten(), y.flatten(), z.flatten()))
+        # # meshgrid from axes and resolution
+        # x, y, z = np.meshgrid(x_, y_, z_, indexing='ij')
+        # # print "x.shape", x.shape
+        # # print "x", x.flatten()
+        # # print "y", y.flatten()
+        # # print "z", z.flatten()
+        # # combined grid
+        # error_grid = np.vstack((x.flatten(), y.flatten(), z.flatten()))
 
-        # draw 5 different current state / goal configurations
+        # draw state / goal configurations
         X_accum = []
-        for i in range(numgrid):
+        states = np.linspace(-1, 1, sweepsteps)
+        # for state in range(1): # numgrid):
+        for state in states:
             # randomize initial position
-            self.M_prop_pred = self.environment.compute_motor_command(np.random.uniform(-1.0, 1.0, (1, self.odim)))
+            # self.M_prop_pred = self.environment.compute_motor_command(np.random.uniform(-1.0, 1.0, (1, self.odim)))
             # draw random goal and keep it fixed
-            self.goal_prop = self.environment.compute_motor_command(np.random.uniform(-1.0, 1.0, (1, self.odim)))
+            # self.goal_prop = self.environment.compute_motor_command(np.random.uniform(-1.0, 1.0, (1, self.odim)))
+            self.goal_prop = self.environment.compute_motor_command(np.ones((1, self.odim)) * state)
             # self.goal_prop = np.random.uniform(self.environment.conf.m_mins, self.environment.conf.m_maxs, (1, self.odim))
             GOALS = np.repeat(self.goal_prop, error_grid.shape[1], axis = 0) # as many goals as error components
             # FIXME: hacks for M1/M2
@@ -738,19 +878,59 @@ class ActiveInferenceExperiment(object):
             X_accum.append(X)
 
         X_accum = np.array(X_accum)
-        # ref1 = X_accum[0].copy()
-        # print "ref1.shape", ref1.shape
-        X_accum = X_accum.reshape((X_accum.shape[0] * X_accum.shape[1], X_accum.shape[2]))
-        # ref2 = X_accum[:125].copy()
-        # print "ref2.shape", ref2.shape
-        # print "ref1 == ref2?", np.all(ref1 == ref2)
+
+        # don't need this?
+        # X_accum = X_accum.reshape((X_accum.shape[0] * X_accum.shape[1], X_accum.shape[2]))
+        
         print "X_accum.shape", X_accum.shape, self.mdl.idim, self.mdl.odim
         X = X_accum
-        print "trying a predict"
-        pred = self.mdl.predict(X)
-        print "pred.shape", pred.shape
         # X's and pred's indices now mean: slowest: goal, e1, e2, fastest: e3
+        # return X
+        self.X_model_sweep = X
 
+    def rh_model_sweep(self):
+        assert hasattr(self, "X_model_sweep")
+        pred = []
+        for i in range(self.X_model_sweep.shape[0]): # loop over start states
+            print "trying a predict with X = %d,%s" % (0, self.X_model_sweep.shape)
+            pred.append(self.mdl.predict(self.X_model_sweep[i]))
+        # print "pred.shape", pred.shape
+        pred = np.array(pred)
+        self.Y_model_sweep = pred
+                
+    def rh_model_plot(self):
+        """prepare and plot model outputs over input variations from sweep"""
+        assert hasattr(self, "X_model_sweep")
+        assert hasattr(self, "Y_model_sweep")
+
+        print "%s.rh_plot_model sweepsteps = %d" % (self.__class__.__name__, self.X_model_sweep.shape[0])
+        print "%s.rh_plot_model environment = %s" % (self.__class__.__name__, self.environment)
+        print "%s.rh_plot_model environment proprio dims = %d" % (self.__class__.__name__, self.environment.conf.m_ndims)
+        
+        # scatter_data_raw   = np.hstack((self.X_model_sweep[:,1:], self.Y_model_sweep))
+        # scatter_data_cols  = ["X%d" % i for i in range(1, self.X_model_sweep.shape[1])]
+        # scatter_data_cols += ["Y%d" % i for i in range(self.Y_model_sweep.shape[1])]
+        # print "scatter_data_raw", scatter_data_raw.shape
+        # # df = pd.DataFrame(scatter_data_raw, columns=["x_%d" % i for i in range(scatter_data_raw.shape[1])])
+        # df = pd.DataFrame(scatter_data_raw, columns=scatter_data_cols)
+ 
+        # plot_scattermatrix(df)
+        # plot_scattermatrix_reduced(df)
+        plot_colormeshmatrix_reduced(self.X_model_sweep, self.Y_model_sweep)
+        
+    ################################################################################
+    def map_model_type03_goal_prediction_error(self):
+        """plot model output over model input sweep"""
+        from mpl_toolkits.mplot3d import Axes3D
+        doplot_scattermatrix = False
+        
+        # turn off interactive mode from explauto
+        pl.ioff()
+
+        self.X_model_sweep = self.rh_model_generate_sweep_input()
+        self.Y_model_sweep = self.rh_model_sweep()
+        pred = self.Y_model_sweep
+        
         ############################################################
         # quiver matrix
         pl.ioff()
@@ -1076,7 +1256,7 @@ class ActiveInferenceExperiment(object):
     def experiment_plot(self):
         """main plot of experiment multivariate timeseries"""
         # turn off interactive mode from explauto
-        pl.ioff()
+        # pl.ioff()
 
         # no data?
         if len(self.logs["X_"]) <= 0:
@@ -1099,38 +1279,191 @@ class ActiveInferenceExperiment(object):
         print "errors: e1 = %f, e2 = %f" % (err1, err2)
                 
         pl.ioff()
-        pl.suptitle("Mode: %s using %s (X: FM input, state pred: FM output)" % (self.mode, self.model))
-        
-        pl.subplot(611)
-        pl.title("Proprioceptive goal")
-        pl.plot(self.logs["goal_prop"], "-x")
-        # pl.plot(self.logs["E2P_pred"], "-x")
-        
-        pl.subplot(612)
-        pl.title("Proprioceptive prediction error")
-        # pl.plot(self.X__[10:,3:], "-x")
-        # pl.plot(self.X__[:,3:], "-x")
-        pl.plot(self.logs["E_prop_pred"], "-x")
-        
-        pl.subplot(613)
-        pl.title("Proprioceptive state prediction")
-        pl.plot(self.logs["S_prop_pred"])
-        
-        pl.subplot(614)
-        pl.title("Proprioceptive prediction error (state - goal)")
-        pl.plot(self.logs["E_prop_pred"])
-        
-        pl.subplot(615)
-        pl.title("Proprioceptive state")
-        pl.plot(self.logs["M_prop_pred"])
 
-        pl.subplot(616)
-        pl.title("Exteroceptive state and goal")
-        pl.plot(self.logs["S_ext"], label="S_ext")
-        pl.plot(self.logs["goal_ext"], label="goal_ext")
-        pl.legend()
+        fig = pl.figure()
+        fig.suptitle("Mode: %s using %s (X: FM input, state pred: FM output)" % (self.mode, self.model))
         
-        pl.show()
+        ax = fig.add_subplot(611)
+        ax.set_title("Proprioceptive goal")
+        ax.plot(self.logs["goal_prop"], "-x")
+        # ax.plot(self.logs["E2P_pred"], "-x")
+        
+        ax = fig.add_subplot(612)
+        ax.set_title("Proprioceptive prediction error")
+        # ax.plot(self.X__[10:,3:], "-x")
+        # ax.plot(self.X__[:,3:], "-x")
+        ax.plot(self.logs["E_prop_pred"], "-x")
+        
+        ax = fig.add_subplot(613)
+        ax.set_title("Proprioceptive state prediction")
+        ax.plot(self.logs["S_prop_pred"])
+        
+        ax = fig.add_subplot(614)
+        ax.set_title("Proprioceptive prediction error (state - goal)")
+        ax.plot(self.logs["E_prop_pred"])
+        
+        ax = fig.add_subplot(615)
+        ax.set_title("Proprioceptive state")
+        ax.plot(self.logs["M_prop_pred"])
+
+        ax = fig.add_subplot(616)
+        ax.set_title("Exteroceptive state and goal")
+        ax.plot(self.logs["S_ext"], label="S_ext")
+        ax.plot(self.logs["goal_ext"], label="goal_ext")
+        ax.legend()
+
+        # pl.show()
+        if self.saveplots:
+            fig.savefig("fig_%03d_aie_experiment_plot.pdf" % (fig.number), dpi=300)
+
+        fig.show()
+        
+    def experiment_plot_basic(self):
+        """plot experiment timeseries to illustrate basic operation"""
+        # pl.ioff()
+
+        # no data?
+        if len(self.logs["X_"]) <= 0:
+            return # nothing to plot
+        
+        # convert list to array
+        if not type(self.logs["X_"]) is np.ndarray:
+            self.X__ = np.array(self.logs["X_"])
+        else:
+            self.X__ = self.logs["X_"].copy()
+        # print self.logs["X_"].shape, self.X__.shape
+
+        # prop_pred minus prop
+        err1 = self.logs["M_prop_pred"] - self.X__[:,:3]
+        # print err1
+        err1 = np.sqrt(np.mean(err1**2))
+        err2 = self.logs["E_prop_pred"]
+        # print err2
+        err2 = np.sqrt(np.mean(err2**2))
+        print "errors: e1 = %f, e2 = %f" % (err1, err2)
+                
+        pl.ioff()
+
+        fig = pl.figure()
+        fig.suptitle("Mode: %s using %s (X: FM input, state pred: FM output)" % (self.mode, self.model))
+        
+        ax = fig.add_subplot(211)
+        ax.set_title("Proprioceptive goal")
+        ax.plot(self.logs["goal_prop"], "-x")
+        ax.plot(self.logs["S_prop_pred"])
+        # ax.plot(self.logs["E2P_pred"], "-x")
+        
+        ax = fig.add_subplot(212)
+        ax.set_title("Proprioceptive prediction error")
+        # ax.plot(np.abs(self.logs["E_prop_pred"]), "-x")
+        ax.plot(self.logs["E_prop_pred"], "-x")
+        
+        # ax = fig.add_subplot(613)
+        # ax.set_title("Proprioceptive state prediction")
+        # ax.plot(self.logs["S_prop_pred"])
+        
+        # ax = fig.add_subplot(614)
+        # ax.set_title("Proprioceptive prediction error (state - goal)")
+        # ax.plot(self.logs["E_prop_pred"])
+        
+        # ax = fig.add_subplot(615)
+        # ax.set_title("Proprioceptive state")
+        # ax.plot(self.logs["M_prop_pred"])
+
+        # ax = fig.add_subplot(616)
+        # ax.set_title("Exteroceptive state and goal")
+        # ax.plot(self.logs["S_ext"], label="S_ext")
+        # ax.plot(self.logs["goal_ext"], label="goal_ext")
+        # ax.legend()
+        if self.saveplots:
+            fig.savefig("fig_%03d_aie_experiment_plot_basic.pdf" % (fig.number), dpi=300)
+        fig.show()
+        
+def plot_scattermatrix(df):
+    """plot a scattermatrix of dataframe df"""
+    if df is None:
+        print "plot_scattermatrix: no data passed"
+        return
+        
+    from pandas.tools.plotting import scatter_matrix
+    # df = pd.DataFrame(X, columns=['x1_t', 'x2_t', 'x1_tptau', 'x2_tptau', 'u_t'])
+    # scatter_data_raw = np.hstack((np.array(Xs), np.array(Ys)))
+    # scatter_data_raw = np.hstack((Xs, Ys))
+    # print "scatter_data_raw", scatter_data_raw.shape
+
+    pl.ioff()
+    # df = pd.DataFrame(scatter_data_raw, columns=["x_%d" % i for i in range(scatter_data_raw.shape[1])])
+    sm = scatter_matrix(df, alpha=0.2, figsize=(10, 10), diagonal='hist')
+    fig = sm[0,0].get_figure()
+    if SAVEPLOTS:
+        fig.savefig("fig_%03d_scattermatrix.pdf" % (fig.number), dpi=300)
+    fig.show()
+    # pl.show()
+
+def plot_scattermatrix_reduced(df):
+    input_cols  = [i for i in df.columns if i.startswith("X")]
+    output_cols = [i for i in df.columns if i.startswith("Y")]
+    Xs = df[input_cols]
+    Ys = df[output_cols]
+
+    numsamples = df.shape[0]
+    print "plot_scattermatrix_reduced: numsamples = %d" % numsamples
+    
+    # numplots = Xs.shape[1] * Ys.shape[1]
+    # print "numplots = %d" % numplots
+
+    gs = gridspec.GridSpec(Ys.shape[1], Xs.shape[1])
+    pl.ioff()
+    fig = pl.figure()
+    # alpha = 1.0 / np.power(numsamples, 1.0/(Xs.shape[1] - 0))
+    alpha = 0.2
+    print "alpha", alpha
+    cols = ["k", "b", "r", "g", "c", "m", "y"]
+    for i in range(Xs.shape[1]):
+        for j in range(Ys.shape[1]):
+            # print "i, j", i, j, Xs, Ys
+            ax = fig.add_subplot(gs[j, i])
+            ax.plot(Xs.as_matrix()[:,i], Ys.as_matrix()[:,j], "ko", alpha = alpha)
+            ax.set_xlabel(input_cols[i])
+            ax.set_ylabel(output_cols[j])
+    if SAVEPLOTS:
+        fig.savefig("fig_%03d_scattermatrix_reduced.pdf" % (fig.number), dpi=300)
+    fig.show()
+            
+def plot_colormeshmatrix_reduced(X, Y):
+    print "X.shape", X.shape, "Y.shape", Y.shape
+    # input_cols  = [i for i in df.columns if i.startswith("X")]
+    # output_cols = [i for i in df.columns if i.startswith("Y")]
+    # Xs = df[input_cols]
+    # Ys = df[output_cols]
+
+    # numsamples = df.shape[0]
+    # print "plot_scattermatrix_reduced: numsamples = %d" % numsamples
+    
+    # # numplots = Xs.shape[1] * Ys.shape[1]
+    # # print "numplots = %d" % numplots
+
+    
+    gs = gridspec.GridSpec(Y.shape[2], X.shape[2]/2)
+    pl.ioff()
+    fig = pl.figure()
+    # # alpha = 1.0 / np.power(numsamples, 1.0/(Xs.shape[1] - 0))
+    # alpha = 0.2
+    # print "alpha", alpha
+    # cols = ["k", "b", "r", "g", "c", "m", "y"]
+    for i in range(X.shape[2]/2):
+        for j in range(Y.shape[2]):
+            # print "i, j", i, j, Xs, Ys
+            ax = fig.add_subplot(gs[j, i])
+            pcm = ax.pcolormesh(X[:,:,0], X[:,:,1], Y[:,:,0])
+            # ax.plot(Xs.as_matrix()[:,i], Ys.as_matrix()[:,j], "ko", alpha = alpha)
+            ax.set_xlabel("goal")
+            ax.set_ylabel("error")
+            cbar = fig.colorbar(mappable = pcm, ax=ax, orientation="horizontal")
+            ax.set_aspect(1)
+    if SAVEPLOTS:
+        fig.savefig("fig_%03d_colormeshmatrix_reduced.pdf" % (fig.number), dpi=300)
+    fig.show()
 
 def test_models(args):
     from actinf_models import ActInfModel
@@ -1161,15 +1494,18 @@ def main(args):
         idim = None
         # if args.mode.startswith("type03_1"):
         #     idim = 3
+        print "args.goal_sample_interval", args.goal_sample_interval
         inf = ActiveInferenceExperiment(args.mode, args.model, args.numsteps,
                                         idim = idim,
                                         environment_str = args.environment,
                                         goal_sample_interval = args.goal_sample_interval,
-                                        e2pmodel = args.e2pmodel)
+                                        e2pmodel = args.e2pmodel,
+                                        saveplots = SAVEPLOTS)
 
         inf.run()
 
-        inf.experiment_plot()
+        # inf.experiment_plot()
+        pl.show()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
