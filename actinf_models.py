@@ -103,8 +103,8 @@ class ActInfKNN(ActInfModel):
         print("%s.bootstrap'ping" % (self.__class__.__name__))
         for i in range(10):
             if self.idim == self.odim:
-                self.X_.append(np.ones((self.idim, ) * i * 0.1))
-                self.y_.append(np.ones((self.odim, ) * i * 0.1))
+                self.X_.append(np.ones((self.idim, )) * i * 0.1)
+                self.y_.append(np.ones((self.odim, )) * i * 0.1)
             else:
                 self.X_.append(np.random.uniform(-0.1, 0.1, (self.idim,)))
                 self.y_.append(np.random.uniform(-0.1, 0.1, (self.odim,)))

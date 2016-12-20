@@ -53,6 +53,7 @@ modes = [
 class ActiveInferenceExperiment(object):
     def __init__(self, mode = "type01_state_prediction_error",
                  model = "knn", numsteps = 1000, idim = None,
+                 environment_str = "simplearm",
                  goal_sample_interval = 50, e2pmodel = None):
         self.mode = mode
         self.model = model
@@ -62,18 +63,47 @@ class ActiveInferenceExperiment(object):
         # experiment settings
         self.numsteps = numsteps
         
-        # intialize robot environment        
-        self.environment = Environment.from_configuration('simple_arm', 'low_dimensional')
-        # self.environment = Environment.from_configuration('pointmass', 'low_dim_vel')
-        self.environment.noise = 0.
-
-        if idim is None:
-            self.idim = self.environment.conf.m_ndims * 2
+        # intialize robot environment
+        if environment_str == "simplearm":
+            self.environment = Environment.from_configuration('simple_arm', 'low_dimensional')
+            self.environment.noise = 0.
+            # dimensions
+            if mode.startswith("type03_1"):
+                self.idim = self.environment.conf.m_ndims
+            else:
+                self.idim = self.environment.conf.m_ndims * 2
+            self.odim = self.environment.conf.m_ndims
+            self.dim_ext  = 2 # cartesian
+                
+        elif environment_str == "pointmass1d":
+            self.environment = Environment.from_configuration('pointmass', 'low_dim_vel')
+            if mode.startswith("type03_1"):
+                self.idim = self.environment.conf.m_ndims
+            else:
+                self.idim = self.environment.conf.m_ndims * 2
+            self.odim = self.environment.conf.m_ndims
+            self.dim_ext  = self.environment.conf.m_ndims # cartesian
+            
+        elif environment_str == "pointmass3d":
+            self.environment = Environment.from_configuration('pointmass', 'mid_dim_vel')
+            if mode.startswith("type03_1"):
+                self.idim = self.environment.conf.m_ndims
+            else:
+                self.idim = self.environment.conf.m_ndims * 2
+            self.odim = self.environment.conf.m_ndims
+            self.dim_ext  = self.environment.conf.m_ndims # cartesian
         else:
-            self.idim = idim
-        self.odim = self.environment.conf.m_ndims
+            print "%s.__init__ unknown environment string '%s', exiting" % (self.__class__.__name__, environment_str)
+            import sys
+            sys.exit(1)
+
+        # if idim is None:
+        #     self.idim = self.environment.conf.m_ndims * 2
+        # else:
+        #     self.idim = idim
+        # self.odim = self.environment.conf.m_ndims
         # exteroceptive dimensionality
-        self.dim_ext  = 2 # cartesian
+        # self.dim_ext  = 2 # cartesian
         # self.dim_prop = 2 # cartesian
 
         # prepare run_hooks
@@ -159,7 +189,7 @@ class ActiveInferenceExperiment(object):
             # experiment loop hooks
             self.run_hooks["hook01"] = partial(self.rh_learn_proprio, iter_start = 0, iter_end = self.numsteps)
             self.run_hooks["hook02"] = self.rh_learn_proprio_save
-            self.run_hooks["hook03"] = self.rh_check_for_model_and_map
+            # self.run_hooks["hook03"] = self.rh_check_for_model_and_map
 
         elif mode == "type03_1_prediction_error":
             """active inference / predictive coding: most basic version (?), proprioceptive only
@@ -173,7 +203,7 @@ class ActiveInferenceExperiment(object):
             self.run_hooks["hook01"] = self.rh_learn_proprio_init_1
             self.run_hooks["hook02"] = partial(self.rh_learn_proprio, iter_start = 0, iter_end = self.numsteps)
             self.run_hooks["hook03"] = self.rh_learn_proprio_save
-            self.run_hooks["hook04"] = self.rh_check_for_model_and_map
+            # self.run_hooks["hook04"] = self.rh_check_for_model_and_map
                         
         elif mode == "type04_ext_prop":
             """run basic proprio learning, record extero/proprio data, fit probabilistic / multivalued model 'mm'
@@ -286,6 +316,7 @@ class ActiveInferenceExperiment(object):
     ################################################################################
     # proprio learning model variant 0
     def lh_learn_proprio_base_0(self, i):
+        """Basic proprio learning hook using goal prediction error model M1"""
         assert self.goal_prop is not None, "self.goal_prop at iter = %d is None, should by ndarray" % i
         assert self.goal_prop.shape == (1, self.odim), "self.goal_prop.shape is wrong, should be %s" % (1, self.odim)
         
@@ -328,6 +359,7 @@ class ActiveInferenceExperiment(object):
     ################################################################################
     # proprio learning model variant 1
     def rh_learn_proprio_init_1(self):
+        print("%s.rh_learn_proprio_init_1 self.E_prop_pred.shape = %s, self.idim = %d" % (self.__class__.__name__, self.E_prop_pred.shape, self.idim))
         if not hasattr(self, "X_"): self.X_ = np.hstack((self.E_prop_pred)).reshape((1, self.idim)) # initialize model input
         
     def lh_learn_proprio_base_1(self, i):
@@ -335,7 +367,7 @@ class ActiveInferenceExperiment(object):
         self.M_prop_pred = self.environment.compute_motor_command(self.M_prop_pred + self.S_prop_pred) #
             
         # 2a. optionally distort response
-        self.M_prop_pred = np.sin(self.M_prop_pred * np.pi/1.95) # * 1.333
+        # self.M_prop_pred = np.sin(self.M_prop_pred * np.pi/1.95) # * 1.333
         # self.M_prop_pred = np.exp(self.M_prop_pred) - 1.0 # * 1.333
         # self.M_prop_pred = (gaussian(0, 0.5, self.M_prop_pred) - 0.4) * 5
 
@@ -666,7 +698,14 @@ class ActiveInferenceExperiment(object):
         # meshgrid resolution
         numgrid = 5
 
-        # linear axes
+        print "%s.map_model_type03_goal_prediction_error self.mdl.idim = %d, self.mdl.odim = %s" % (self.__class__.__name__, self.mdl.idim, self.mdl.odim)
+
+        # construct linear axes for input sweep, goal assumed equal odim / motor dim
+        # x_ = [np.linspace(-1., 1., numgrid) for i in range(self.mdl.odim))
+
+        # get meshgrid from linear axes
+        # x, y, z = np.meshgrid(x_, y_, z_, indexing='ij')
+        
         x_ = np.linspace(-1., 1., numgrid)
         y_ = np.linspace(-1., 1., numgrid)
         z_ = np.linspace(-1., 1., numgrid)
@@ -689,9 +728,12 @@ class ActiveInferenceExperiment(object):
             self.goal_prop = self.environment.compute_motor_command(np.random.uniform(-1.0, 1.0, (1, self.odim)))
             # self.goal_prop = np.random.uniform(self.environment.conf.m_mins, self.environment.conf.m_maxs, (1, self.odim))
             GOALS = np.repeat(self.goal_prop, error_grid.shape[1], axis = 0) # as many goals as error components
+            # FIXME: hacks for M1/M2
             if self.mdl.idim == 3:
                 X = GOALS
             elif self.mdl.idim == 6:
+                X = np.hstack((GOALS, error_grid.T))
+            else:
                 X = np.hstack((GOALS, error_grid.T))
             X_accum.append(X)
 
@@ -702,7 +744,7 @@ class ActiveInferenceExperiment(object):
         # ref2 = X_accum[:125].copy()
         # print "ref2.shape", ref2.shape
         # print "ref1 == ref2?", np.all(ref1 == ref2)
-        print "X_accum.shape", X_accum.shape
+        print "X_accum.shape", X_accum.shape, self.mdl.idim, self.mdl.odim
         X = X_accum
         print "trying a predict"
         pred = self.mdl.predict(X)
@@ -1117,10 +1159,11 @@ def main(args):
         test_models(args)
     else:
         idim = None
-        if args.mode.startswith("type03_1"):
-            idim = 3
+        # if args.mode.startswith("type03_1"):
+        #     idim = 3
         inf = ActiveInferenceExperiment(args.mode, args.model, args.numsteps,
                                         idim = idim,
+                                        environment_str = args.environment,
                                         goal_sample_interval = args.goal_sample_interval,
                                         e2pmodel = args.e2pmodel)
 
@@ -1131,6 +1174,7 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-e2p", "--e2pmodel",             type=str, help="extero to proprio mapping [gmm]", default="gmm")
+    parser.add_argument("-e",   "--environment",          type=str, help="which environment to use [simplearm]", default="simplearm")
     parser.add_argument("-gsi", "--goal_sample_interval", type=int, help="Interval at which to sample goals [50]", default=50)
     parser.add_argument("-m",   "--mode",                 type=str, help="program execution mode, one of " + ", ".join(modes) + " [type01_state_prediction_error]", default="type04_ext_prop")
     parser.add_argument("-md",  "--model",                type=str, help="learning machine [knn]", default="knn")
