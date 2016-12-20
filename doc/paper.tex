@@ -216,14 +216,26 @@ post-prediction measurements are being passed on.
 %% (PPEIF) we propose and analyze a simple model complying with the
 %% principles.
 
-We can take these as these three principles for the design of the
-proposed models:
+We can take these three principles for the design of the proposed models:
 
 \begin{itemize}
 
+\item Discuss the change of terminology or dichotomies regarding:
+  \begin{itemize}
+  \item predictions/motor commands,
+  \item forward models/inverse models/controllers/policies
+  \item bottom level black box: different actual forward model (FM)
+    representations via SOMs, kNN, RLS, GP, \ldots{}
+  \item see discussion with antonio re: "it's just labels", underneath it is a raw
+    network of signal flows putting observable quantities into
+    relation to each other, from which apparent goal-driven behaviour
+    (teleology) emerges
+  \end{itemize}
+
+
 \item Proprioceptive space: any embodied agent has to have a lowest
   level motor system. This is usually represented by a vector of motor
-  angles, motor velocities, motor torques, but essentially be any
+  angles, motor velocities, motor torques, etc but essentially it can be any
   given kind of controller. A controller in this sense implies a
   measurement and a prediction defined in the same space. This is the
   point at which we want to engange in interaction with the
@@ -246,7 +258,7 @@ proposed models:
 \item Descending propioceptive predictions are equivalent to motor
   commands. Movement quash error at the level of spinal reflexes
   \citep{pickering2014}. Propioceptive predictions elicit motor
-  actions, so motor commands, so motor commands are replaced by those
+  actions, so motor commands are replaced by those
   propioceptive predictions \citep{clark2015}. $S^*_{p(t)}=M_{(t)}$.
 
 \item Motor commands become descending predictions or propioceptive
@@ -270,13 +282,52 @@ proposed models:
 \section{Related}
 \label{sec:orgf9aed21}
 
-Long history, many models: control, development, RL, \ldots{}
+Long history, many models: control, development, RL, neuroscience, ...\ldots{}
 
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \section{Proposed Models}
 \label{plan}
 
 \subsection{General Models}
+
+First two basic models and their difference in terms of learning
+dynamics. Do any dynamic properties support or contradict biological
+motor learning?
+
+\subsection{M1}
+
+The basic building block (BBB) contains an adaptive forward model
+(predictor) whose output is the BBB's output. We assume direct
+feedback from that module that the output is connected to. The BBB'
+inputs are an explicit goal and the prediction error with respect to
+the last prediction at ${t-1}$. These inputs taken together encode the
+state. Thus the forward model should in principle be able to pick up
+on different relations depending on the state. Graphical
+representation is given in \autoref{fig:M1}.
+
+\begin{figure}
+  \centering
+  \includegraphics[width=0.9\textwidth]{img/mdl_prediction_error_and_goal.pdf}
+  \caption{\label{fig:M1} Basic model M1.}
+\end{figure}
+
+\subsection{M2}
+
+This modification of BBB M1 receives only the error as an input. The
+model's graph is shown in \autoref{fig:M2}. This model will not be
+able to distinguish between situations demanding different
+predictions.
+
+\begin{figure}
+  \centering
+  \includegraphics[width=0.9\textwidth]{img/mdl_prediction_error_only.pdf}
+  \caption{\label{fig:M2} Basic model M2.}
+\end{figure}
+
+\subsection{Extended models connecting modalities}
+
+Merge with alejandra's two versions (explicit update rule).
 
 This model includes both propio and extero (Figs \ref{fig:basic1}
 and \ref{fig:basic2}). The only difference is how the 
@@ -370,54 +421,32 @@ no learning / weight changes
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-\section{Core idea and models}
-\label{sec:org733d6e8}
-\begin{enumerate}
-\item discuss the change of terminology or dichotomies regarding:
-\begin{itemize}
-\item predictions/motor commands,
-\item forward models/inverse models/controllers/policies
-\item bottom level black box: different actual forward model (FM)
-representations via SOMs, kNN, RLS, GP, \ldots{}
-\item see discussion with antonio re: "it's just labels", underneath it is a raw
-network of signal flows putting observable quantities into
-relation to each other, from which apparent goal-driven behaviour
-(teleology) emerges
-\end{itemize}
-\item two models and their difference in terms of learning dynamics. do
-any dynamic properties support or contradict biological motor learning?
-\begin{enumerate}
-\item M1: explicit goal + error as input
-\item M2: error only as input
-\item merge with alejandra's two versions (explicit update rule)
-\end{enumerate}
-\item Experiments
-\begin{itemize}
-\item deploy models to different robotic systems: Nao, SimpleArm,
-Pointmass, two-wheeled
-\item timeseries analysis
-\item learning transient (arbitrarily fast, see Tin + Poon)
-\item explicitly map out the acquired models by sweeping the inputs and
-record their outputs
-\item what happens under perturbation?
-\item long-term adaptation effects: are we only plastic or are we also
-stable? do new adaptations overwrite previous ones? does a given
-approximator become saturated (just think how critical weight
-initialization in neural networks can be) in terms of its adaption
-capacity?, can be enforced via decay schedules of learning rate
-etc
-\end{itemize}
-\item discuss, compare with existing approaches like std fwd/inv model
-pairs or reinforcement learning
-\end{enumerate}
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \section{Experiments}
 \label{sec:org347db7c}
+
+  \begin{itemize}
+  \item deploy models to different robotic systems: Nao, SimpleArm,
+    Pointmass, two-wheeled
+  \item timeseries analysis
+  \item learning transient (arbitrarily fast, see Tin + Poon)
+  \item explicitly map out the acquired models by sweeping the inputs and
+    record their outputs
+  \item what happens under perturbation?
+  \item long-term adaptation effects: are we only plastic or are we also
+    stable? do new adaptations overwrite previous ones? does a given
+    approximator become saturated (just think how critical weight
+    initialization in neural networks can be) in terms of its adaption
+    capacity?, can be enforced via decay schedules of learning rate
+    etc
+  \end{itemize}
+
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \section{Discussion}
 \label{sec:orga3d6260}
+
+Discuss, compare with existing approaches like std fwd/inv model
+  pairs or reinforcement learning
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \section{Summary}
