@@ -486,7 +486,9 @@ Notes for experiments:
   in addition to instantaneous PE
 % \item operation using non-identity motor transfer function
 \end{itemize}
-    
+
+%% python active_inference_basic.py --seed 1234 --mode basic_operation_1D_M1 --numsteps 200 --model knn --environment pointmass1d --goal_sample_interval 200
+
 \begin{figure}
   \begin{center}
   \subfigure[System sweep response]{
@@ -509,6 +511,7 @@ Notes for experiments:
   \caption{\label{fig:basic_op_200_knn}Basic operation 200 timesteps knn.}
 \end{figure}
 
+%% python active_inference_basic.py --seed 1236 --mode basic_operation_1D_M1 --numsteps 200 --model soesgp --environment pointmass1d --goal_sample_interval 200 
 \begin{figure}
   \begin{center}
   \subfigure[System sweep response]{
@@ -529,10 +532,9 @@ Notes for experiments:
   }
   \end{center}
   \caption{\label{fig:basic_op_200_soesgp}Basic operation 200 timesteps GP.}
-
-
-  
 \end{figure}
+
+%% python active_inference_basic.py --seed 1234 --mode basic_operation_1D_M1 --numsteps 1000 --model knn --environment pointmass1d --goal_sample_interval 100
 \begin{figure}
   \begin{center}
   \subfigure[System sweep response]{
@@ -555,6 +557,7 @@ Notes for experiments:
   \caption{\label{fig:basic_op_1000_knn}Basic operation 1000 timesteps knn.}
 \end{figure}
 
+%% python active_inference_basic.py --seed 1237 --mode basic_operation_1D_M1 --numsteps 1000 --model soesgp --environment pointmass1d --goal_sample_interval 100
 \begin{figure}
   \begin{center}
   \subfigure[System sweep response]{
@@ -575,9 +578,6 @@ Notes for experiments:
   }
   \end{center}
   \caption{\label{fig:basic_op_1000_soesgp}Basic operation 1000 timesteps GP.}
-
-
-  
 \end{figure}
 
 

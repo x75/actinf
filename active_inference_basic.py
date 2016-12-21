@@ -916,7 +916,7 @@ class ActiveInferenceExperiment(object):
  
         # plot_scattermatrix(df)
         # plot_scattermatrix_reduced(df)
-        plot_colormeshmatrix_reduced(self.X_model_sweep, self.Y_model_sweep)
+        plot_colormeshmatrix_reduced(self.X_model_sweep, self.Y_model_sweep, ymin = -1.0, ymax = 1.0)
         
     ################################################################################
     def map_model_type03_goal_prediction_error(self):
@@ -1430,7 +1430,7 @@ def plot_scattermatrix_reduced(df):
         fig.savefig("fig_%03d_scattermatrix_reduced.pdf" % (fig.number), dpi=300)
     fig.show()
             
-def plot_colormeshmatrix_reduced(X, Y):
+def plot_colormeshmatrix_reduced(X, Y, ymin = None, ymax = None):
     print "X.shape", X.shape, "Y.shape", Y.shape
     # input_cols  = [i for i in df.columns if i.startswith("X")]
     # output_cols = [i for i in df.columns if i.startswith("Y")]
@@ -1442,7 +1442,6 @@ def plot_colormeshmatrix_reduced(X, Y):
     
     # # numplots = Xs.shape[1] * Ys.shape[1]
     # # print "numplots = %d" % numplots
-
     
     gs = gridspec.GridSpec(Y.shape[2], X.shape[2]/2)
     pl.ioff()
@@ -1455,7 +1454,7 @@ def plot_colormeshmatrix_reduced(X, Y):
         for j in range(Y.shape[2]):
             # print "i, j", i, j, Xs, Ys
             ax = fig.add_subplot(gs[j, i])
-            pcm = ax.pcolormesh(X[:,:,0], X[:,:,1], Y[:,:,0])
+            pcm = ax.pcolormesh(X[:,:,0], X[:,:,1], Y[:,:,0], vmin = ymin, vmax = ymax)
             # ax.plot(Xs.as_matrix()[:,i], Ys.as_matrix()[:,j], "ko", alpha = alpha)
             ax.set_xlabel("goal")
             ax.set_ylabel("error")
@@ -1488,6 +1487,10 @@ def test_models(args):
 
     
 def main(args):
+
+    # seed PRNG
+    np.random.seed(args.seed)
+        
     if args.mode.startswith("test_"):
         test_models(args)
     else:
@@ -1515,6 +1518,7 @@ if __name__ == "__main__":
     parser.add_argument("-m",   "--mode",                 type=str, help="program execution mode, one of " + ", ".join(modes) + " [type01_state_prediction_error]", default="type04_ext_prop")
     parser.add_argument("-md",  "--model",                type=str, help="learning machine [knn]", default="knn")
     parser.add_argument("-n",   "--numsteps",             type=int, help="number of learning steps [1000]", default=1000)
+    parser.add_argument("-s",  "--seed",                  type=int, help="seed for RNG [0]",        default=0)
     args = parser.parse_args()
 
     main(args)

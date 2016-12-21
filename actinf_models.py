@@ -1316,6 +1316,9 @@ def generate_inverted_sinewave_dataset(N = 1000):
 
 def test_model(args):
     import pylab as pl
+
+    np.random.seed(args.seed)
+    
     # get last component of datafile, the actual filename
     datafilepath_comps = args.datafile.split("/")
     if datafilepath_comps[-1].startswith("EP"):
@@ -1432,10 +1435,11 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("-d", "--datafile",  type=str, help="datafile containing t x (dim_extero + dim_proprio) matrix ", default="data/simplearm_n1000/EP_1000.npy")
-    parser.add_argument("-m", "--modelclass", type=str, help="Which model class to test [KNN], " + ", ".join(model_classes), default="KNN")
-    parser.add_argument("-n", "--numsteps",  type=int, help="Number of datapoints [1000]", default=1000)
-    parser.add_argument("-ne", "--numepisodes",  type=int, help="Number of episodes [10]", default=10)
+    parser.add_argument("-d", "--datafile",     type=str, help="datafile containing t x (dim_extero + dim_proprio) matrix ", default="data/simplearm_n1000/EP_1000.npy")
+    parser.add_argument("-m", "--modelclass",   type=str, help="Which model class to test [KNN], " + ", ".join(model_classes), default="KNN")
+    parser.add_argument("-n", "--numsteps",     type=int, help="Number of datapoints [1000]", default=1000)
+    parser.add_argument("-ne", "--numepisodes", type=int, help="Number of episodes [10]", default=10)
+    parser.add_argument("-s",  "--seed",        type=int, help="seed for RNG [0]",        default=0)
     args = parser.parse_args()
     
     test_model(args)
