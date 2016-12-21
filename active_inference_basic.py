@@ -50,11 +50,12 @@ SAVEPLOTS = True
 # DONE: modify this code to use the GMM model from actinf_models.py (ca. 20161210)
 
 modes = [
+    "m2_prediction_errors",
     "test_models",
     "type01_state_prediction_error",
     "type02_state",
-    "type03_goal_prediction_error",
     "type03_1_prediction_error",
+    "type03_goal_prediction_error",
     "type04_ext_prop",
     "type05_multiple_models",
 ]
@@ -260,6 +261,30 @@ class ActiveInferenceExperiment(object):
         elif mode == "type05_multiple_models":
             self.run = self.run_type05_multiple_models
 
+        elif mode == "m2_prediction_errors":
+            """active inference / predictive coding: first working, most basic version,
+            proprioceptive only
+
+            goal -> goal state prediction -> goal/state error -> update forward model"""
+
+            # pimp environment
+            self.environment.motor_aberration["type"] = "sin"
+            self.environment.motor_aberration["coef"] = -0.7
+            
+            # learning loop hooks
+            self.rh_learn_proprio_hooks["hook01"] = self.lh_learn_proprio_base_2
+            self.rh_learn_proprio_hooks["hook02"] = self.lh_learn_proprio_e2p2e
+            self.rh_learn_proprio_hooks["hook03"] = self.lh_do_logging
+            self.rh_learn_proprio_hooks["hook04"] = self.lh_sample_discrete_uniform_goal
+            # self.rh_learn_proprio_hooks["hook05"] = self.lh_sample_error_gradient
+
+            # experiment loop hooks
+            self.run_hooks["hook00"] = self.make_plot_system_function_and_exec # sweep system before learning
+            self.run_hooks["hook01"] = partial(self.rh_learn_proprio, iter_start = 0, iter_end = self.numsteps)
+            self.run_hooks["hook02"] = self.rh_learn_proprio_save
+            # self.run_hooks["hook03"] = self.rh_check_for_model_and_map
+            self.run_hooks["hook99"] = self.experiment_plot
+            
         elif mode == "basic_operation_1D_M1":
             """Experiment: Basic operation M1 on 1-dimensional data"""
 
@@ -459,12 +484,12 @@ class ActiveInferenceExperiment(object):
                 v(i)
 
     ################################################################################
-    # proprio learning model variant 0
-    def lh_learn_proprio_base_0(self, i):
+    # proprio learning model variant 2 using more of prediction error
+    def lh_learn_proprio_base_2(self, i):
         """Basic proprio learning hook using goal prediction error model M1"""
         assert self.goal_prop is not None, "self.goal_prop at iter = %d is None, should by ndarray" % i
         assert self.goal_prop.shape == (1, self.odim), "self.goal_prop.shape is wrong, should be %s" % (1, self.odim)
-
+                
         # prepare model input X as goal and prediction error
         self.X_ = np.hstack((self.goal_prop, self.E_prop_pred))
 
@@ -478,10 +503,39 @@ class ActiveInferenceExperiment(object):
         # self.M_prop_pred = np.sin(self.M_prop_pred * np.pi) # * 1.333
         # self.M_prop_pred = np.exp(self.M_prop_pred) - 1.0 # * 1.333
         # self.M_prop_pred = (gaussian(0, 0.5, self.M_prop_pred) - 0.4) * 5
-        
+
         # add noise
         self.M_prop_pred += np.random.normal(0, 0.01, self.M_prop_pred.shape)
 
+        # sample error gradient
+        numsamples = 20
+        if i % 50 == 0:
+            from sklearn import linear_model
+            import sklearn
+            from sklearn import kernel_ridge
+            
+            lm = linear_model.Ridge(alpha = 0.0)
+            
+            S_ = []
+            M_ = []
+            for i in range(numsamples):
+                S_.append(np.random.normal(self.S_prop_pred, 0.01 * self.environment.conf.m_maxs, self.S_prop_pred.shape))
+                # print "S_[-1]", S_[-1]
+                M_.append(self.environment.compute_motor_command(S_[-1]))
+                S_ext_ = self.environment.compute_sensori_effect(M_[-1]).reshape((1, self.dim_ext))
+            S_ = np.array(S_).reshape((numsamples, self.S_prop_pred.shape[1]))
+            M_ = np.array(M_).reshape((numsamples, self.S_prop_pred.shape[1]))
+            print "S_", S_.shape, "M_", M_.shape
+            # print "S_", S_, "M_", M_
+
+
+            lm.fit(S_, M_)
+            self.grad = np.diag(lm.coef_)
+            print "grad", np.sign(self.grad), self.grad
+            
+            # pl.plot(S_, M_, "ko", alpha=0.4)
+            # pl.show()
+        
         if np.sum(np.abs(self.goal_prop - self.goal_prop_tm1)) > 1e-2:
             self.E_prop_pred_fast = np.random.uniform(-1e-5, 1e-5, self.E_prop_pred_fast.shape)
             self.E_prop_pred_slow = np.random.uniform(-1e-5, 1e-5, self.E_prop_pred_slow.shape)
@@ -516,7 +570,9 @@ class ActiveInferenceExperiment(object):
         
         # compute target for the prediction error driven forward model
         # if i % 10 == 0: # play with decreased update rates
-        self.y_ = self.S_prop_pred - (self.E_prop_pred * self.eta_fwd_mdl) - self.E_prop_pred_state * (self.eta_fwd_mdl/2.0)
+        # self.y_ = self.S_prop_pred - (self.E_prop_pred * self.eta_fwd_mdl) - self.E_prop_pred_state * (self.eta_fwd_mdl/2.0)
+        modulator = self.grad # np.sign(self.grad)
+        self.y_ = self.S_prop_pred - (self.E_prop_pred * self.eta_fwd_mdl * modulator)
         # modulator = -np.sign(self.dE_prop_pred_fast / -E_prop_pred_tm1)
         # self.y_ = self.S_prop_pred - (self.E_prop_pred * self.eta_fwd_mdl * modulator)
         # FIXME: what is the target if there is no trivial mapping of the error?
@@ -527,6 +583,50 @@ class ActiveInferenceExperiment(object):
         self.mdl.fit(self.X_, self.y_)
 
         self.goal_prop_tm1 = self.goal_prop.copy()
+        
+    ################################################################################
+    # proprio learning model variant 0
+    def lh_learn_proprio_base_0(self, i):
+        """Basic proprio learning hook using goal prediction error model M1"""
+        assert self.goal_prop is not None, "self.goal_prop at iter = %d is None, should by ndarray" % i
+        assert self.goal_prop.shape == (1, self.odim), "self.goal_prop.shape is wrong, should be %s" % (1, self.odim)
+
+        # prepare model input X as goal and prediction error
+        self.X_ = np.hstack((self.goal_prop, self.E_prop_pred))
+
+        # predict next state in proprioceptive space
+        self.S_prop_pred = self.mdl.predict(self.X_)
+
+        # inverse model / motor primitive / reflex arc
+        self.M_prop_pred = self.environment.compute_motor_command(self.S_prop_pred)
+        
+        # distort response
+        # self.M_prop_pred = np.sin(self.M_prop_pred * np.pi) # * 1.333
+        # self.M_prop_pred = np.exp(self.M_prop_pred) - 1.0 # * 1.333
+        # self.M_prop_pred = (gaussian(0, 0.5, self.M_prop_pred) - 0.4) * 5
+        
+        # add noise
+        self.M_prop_pred += np.random.normal(0, 0.01, self.M_prop_pred.shape)
+
+        # prediction error's
+        self.E_prop_pred_goal  = self.M_prop_pred - self.goal_prop
+        self.E_prop_pred = self.E_prop_pred_goal
+                
+        # # prediction error's variant
+        # self.E_prop_pred_state = self.S_prop_pred - self.M_prop_pred
+        # self.E_prop_pred = self.E_prop_pred_state
+        
+        # execute command propagating effect through system, body + environment
+        self.S_ext = self.environment.compute_sensori_effect(self.M_prop_pred.T).reshape((1, self.dim_ext))
+        # self.environment.plot_arm()
+        
+        # compute target for the prediction error driven forward model
+        # if i % 10 == 0: # play with decreased update rates
+        self.y_ = self.S_prop_pred - (self.E_prop_pred * self.eta_fwd_mdl)
+        # FIXME: suppress update when error is small enough (< threshold)
+
+        # fit the model
+        self.mdl.fit(self.X_, self.y_)
 
     ################################################################################
     # proprio learning model variant 1
@@ -650,6 +750,14 @@ class ActiveInferenceExperiment(object):
             print "e_pred = %f" % (np.linalg.norm(self.E_prop_pred, 2))
             print "ext_er = %f" % (ext_err)
 
+    # def lh_sample_error_gradient(self, i):
+    #     """sample the local error gradient"""
+    #     # hook: goal sampling
+    #     if i % self.goal_sample_interval == 0:
+    #         self.goal_prop = np.random.uniform(self.environment.conf.m_mins * 0.95, self.environment.conf.m_maxs * 0.95, (1, self.odim))
+    #         print "new goal[%d] = %s" % (i, self.goal_prop)
+    #         print "e_pred = %f" % (np.linalg.norm(self.E_prop_pred, 2))
+
     def rh_learn_proprio_save(self):
         """save data from proprio learning"""
         if not self.attr_check(["logs", "mdl", "mdl_pkl"]):
@@ -669,7 +777,7 @@ class ActiveInferenceExperiment(object):
         self.logs["EP"] = np.hstack((np.asarray(self.e2p.X_), np.asarray(self.e2p.y_)))
         # if mdl is type knn?
         self.logs["EP"] = self.logs["EP"][10:]
-        print "self.logs[\"EP\"]", type(self.logs["EP"]), self.logs["EP"].shape, self.logs["EP"]
+        # print "self.logs[\"EP\"]", type(self.logs["EP"]), self.logs["EP"].shape, self.logs["EP"]
         print "self.logs[\"EP\"].shape = %s, %s" % (self.logs["EP"].shape, self.logs["X__"].shape)
         # print "%d self.logs["EP"].shape = %s".format((0, self.logs["EP"].shape))
 
@@ -1326,30 +1434,30 @@ class ActiveInferenceExperiment(object):
         fig = pl.figure()
         fig.suptitle("Mode: %s using %s (X: FM input, state pred: FM output)" % (self.mode, self.model))
         
-        ax = fig.add_subplot(611)
+        ax = fig.add_subplot(511)
         ax.set_title("Proprioceptive goal")
         ax.plot(self.logs["goal_prop"], "-x")
         # ax.plot(self.logs["E2P_pred"], "-x")
         
-        ax = fig.add_subplot(612)
-        ax.set_title("Proprioceptive prediction error")
-        # ax.plot(self.X__[10:,3:], "-x")
-        # ax.plot(self.X__[:,3:], "-x")
-        ax.plot(self.logs["E_prop_pred"], "-x")
+        # ax = fig.add_subplot(512)
+        # ax.set_title("Proprioceptive prediction error")
+        # # ax.plot(self.X__[10:,3:], "-x")
+        # # ax.plot(self.X__[:,3:], "-x")
+        # ax.plot(self.logs["E_prop_pred"], "-x")
         
-        ax = fig.add_subplot(613)
+        ax = fig.add_subplot(512)
         ax.set_title("Proprioceptive state prediction")
         ax.plot(self.logs["S_prop_pred"])
         
-        ax = fig.add_subplot(614)
+        ax = fig.add_subplot(513)
+        ax.set_title("Proprioceptive state measurement")
+        ax.plot(self.logs["M_prop_pred"])
+
+        ax = fig.add_subplot(514)
         ax.set_title("Proprioceptive prediction error (state - goal)")
         ax.plot(self.logs["E_prop_pred"])
         
-        ax = fig.add_subplot(615)
-        ax.set_title("Proprioceptive state")
-        ax.plot(self.logs["M_prop_pred"])
-
-        ax = fig.add_subplot(616)
+        ax = fig.add_subplot(515)
         ax.set_title("Exteroceptive state and goal")
         ax.plot(self.logs["S_ext"], label="S_ext")
         ax.plot(self.logs["goal_ext"], label="goal_ext")
