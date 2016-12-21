@@ -73,8 +73,12 @@ class ActiveInferenceExperiment(object):
         # experiment settings
         self.numsteps = numsteps
 
+        self.eta_fwd_mdl = 0.7
+        self.coef_smooth_fast = 0.9
+        self.coef_smooth_slow = 0.95
+                
         self.saveplots = saveplots
-        
+
         # intialize robot environment
         if environment_str == "simplearm":
             self.environment = Environment.from_configuration('simple_arm', 'low_dimensional')
@@ -137,18 +141,23 @@ class ActiveInferenceExperiment(object):
         # logging, configure logs dictionary and dict of logging variables
         self.logs = {}
         self.logging_vars = {
-            "S_prop_pred": {"col": self.odim},
-            "E_prop_pred": {"col": self.odim},
-            "M_prop_pred": {"col": self.odim},
-            "goal_prop":   {"col": self.odim},
-            "S_ext":       {"col": self.dim_ext},
-            "E2P_pred":    {"col": self.odim},
-            "P2E_pred":    {"col": self.dim_ext},
-            "goal_ext":    {"col": self.dim_ext},
-            "E_pred_e":    {"col": self.dim_ext},
-            "X_":          {"col": -1}, # 6
-            "X__":         {"col": -1}, # 6
-            "y_":          {"col": -1}  # 3 low-dim
+            "S_prop_pred":  {"col": self.odim},
+            "E_prop_pred":  {"col": self.odim},
+            "E_prop_pred_fast": {"col": self.odim},
+            "dE_prop_pred_fast": {"col": self.odim},
+            "E_prop_pred_slow": {"col": self.odim},
+            "dE_prop_pred_slow": {"col": self.odim},
+            "d_E_prop_pred_": {"col": self.odim},
+            "M_prop_pred":  {"col": self.odim},
+            "goal_prop":    {"col": self.odim},
+            "S_ext":        {"col": self.dim_ext},
+            "E2P_pred":     {"col": self.odim},
+            "P2E_pred":     {"col": self.dim_ext},
+            "goal_ext":     {"col": self.dim_ext},
+            "E_pred_e":     {"col": self.dim_ext},
+            "X_":           {"col": -1}, # 6
+            "X__":          {"col": -1}, # 6
+            "y_":           {"col": -1}  # 3 low-dim
         }
         for k, v in self.logging_vars.items():
             if v["col"] > 0:
@@ -167,6 +176,11 @@ class ActiveInferenceExperiment(object):
         # self.j = np.zeros((1, self.odim))
         self.M_prop_pred = np.zeros((1, self.odim))
         self.E_prop_pred = self.M_prop_pred - self.goal_prop
+        self.E_prop_pred_fast = self.M_prop_pred.copy()
+        self.dE_prop_pred_fast = self.M_prop_pred.copy()
+        self.d_E_prop_pred_ = self.M_prop_pred.copy()
+        self.E_prop_pred_slow = self.M_prop_pred.copy()
+        self.dE_prop_pred_slow = self.M_prop_pred.copy()
         self.S_prop_pred = np.random.normal(0, 0.01, (1, self.odim))
 
     def init_e2p(self, e2pmodel):
@@ -335,7 +349,9 @@ class ActiveInferenceExperiment(object):
         elif model == "storkgp":
             self.mdl = ActInfSTORKGP(self.idim, self.odim)
         else:
-            print "unknown model, FAIL"
+            print "unknown model, FAIL, exiting"
+            import sys
+            sys.exit(1)
 
     def attr_check(self, attrs):
         """check if object has all attributes given in attrs array"""
@@ -448,7 +464,7 @@ class ActiveInferenceExperiment(object):
         """Basic proprio learning hook using goal prediction error model M1"""
         assert self.goal_prop is not None, "self.goal_prop at iter = %d is None, should by ndarray" % i
         assert self.goal_prop.shape == (1, self.odim), "self.goal_prop.shape is wrong, should be %s" % (1, self.odim)
-        
+
         # prepare model input X as goal and prediction error
         self.X_ = np.hstack((self.goal_prop, self.E_prop_pred))
 
@@ -457,6 +473,7 @@ class ActiveInferenceExperiment(object):
 
         # inverse model / motor primitive / reflex arc
         self.M_prop_pred = self.environment.compute_motor_command(self.S_prop_pred)
+        
         # distort response
         # self.M_prop_pred = np.sin(self.M_prop_pred * np.pi) # * 1.333
         # self.M_prop_pred = np.exp(self.M_prop_pred) - 1.0 # * 1.333
@@ -465,9 +482,30 @@ class ActiveInferenceExperiment(object):
         # add noise
         self.M_prop_pred += np.random.normal(0, 0.01, self.M_prop_pred.shape)
 
+        if np.sum(np.abs(self.goal_prop - self.goal_prop_tm1)) > 1e-2:
+            self.E_prop_pred_fast = np.random.uniform(-1e-5, 1e-5, self.E_prop_pred_fast.shape)
+            self.E_prop_pred_slow = np.random.uniform(-1e-5, 1e-5, self.E_prop_pred_slow.shape)
+            # recompute error
+            # self.E_prop_pred = self.M_prop_pred - self.goal_prop
+            # self.E_prop_pred[:] = np.random.uniform(-1e-5, 1e-5, self.E_prop_pred.shape)
+            #else: 
+                
+        E_prop_pred_tm1 = self.E_prop_pred.copy()
+
         # prediction error's
+        self.E_prop_pred_state = self.S_prop_pred - self.M_prop_pred
         self.E_prop_pred_goal  = self.M_prop_pred - self.goal_prop
         self.E_prop_pred = self.E_prop_pred_goal
+        
+        self.E_prop_pred__fast = self.E_prop_pred_fast.copy()
+        self.E_prop_pred_fast  = self.coef_smooth_fast * self.E_prop_pred_fast + (1 - self.coef_smooth_fast) * self.E_prop_pred
+
+        self.E_prop_pred__slow = self.E_prop_pred_slow.copy()
+        self.E_prop_pred_slow  = self.coef_smooth_slow * self.E_prop_pred_slow + (1 - self.coef_smooth_slow) * self.E_prop_pred
+                
+        self.dE_prop_pred_fast = self.E_prop_pred_fast - self.E_prop_pred__fast
+        self.d_E_prop_pred_ = self.coef_smooth_slow * self.d_E_prop_pred_ + (1 - self.coef_smooth_slow) * self.dE_prop_pred_fast
+        
         # # prediction error's variant
         # self.E_prop_pred_state = self.S_prop_pred - self.M_prop_pred
         # self.E_prop_pred = self.E_prop_pred_state
@@ -478,12 +516,17 @@ class ActiveInferenceExperiment(object):
         
         # compute target for the prediction error driven forward model
         # if i % 10 == 0: # play with decreased update rates
-        self.y_ = self.S_prop_pred - (self.E_prop_pred * 0.33)
+        self.y_ = self.S_prop_pred - (self.E_prop_pred * self.eta_fwd_mdl) - self.E_prop_pred_state * (self.eta_fwd_mdl/2.0)
+        # modulator = -np.sign(self.dE_prop_pred_fast / -E_prop_pred_tm1)
+        # self.y_ = self.S_prop_pred - (self.E_prop_pred * self.eta_fwd_mdl * modulator)
         # FIXME: what is the target if there is no trivial mapping of the error?
+        # FIXME: suppress update when error is small enough (< threshold)
         # print "self.y_", self.y_
 
         # fit the model
         self.mdl.fit(self.X_, self.y_)
+
+        self.goal_prop_tm1 = self.goal_prop.copy()
 
     ################################################################################
     # proprio learning model variant 1
@@ -510,7 +553,7 @@ class ActiveInferenceExperiment(object):
         self.E_prop_pred = self.M_prop_pred - self.goal_prop_tm1 # self.E_prop_pred_goal
 
         # compute forward model target from error
-        self.y_ = -self.E_prop_pred * 1.0 # i am amazed this works
+        self.y_ = -self.E_prop_pred * self.eta_fwd_mdl # i am amazed this works
         # FIXME: what is the target if there is no trivial mapping of the error?
 
         # fit the forward model
@@ -547,7 +590,7 @@ class ActiveInferenceExperiment(object):
         # discrete goal
         # hook: goal sampling
         if i % self.goal_sample_interval == 0:
-            self.goal_prop = np.random.uniform(self.environment.conf.m_mins, self.environment.conf.m_maxs, (1, self.odim))
+            self.goal_prop = np.random.uniform(self.environment.conf.m_mins * 0.95, self.environment.conf.m_maxs * 0.95, (1, self.odim))
             print "new goal[%d] = %s" % (i, self.goal_prop)
             print "e_pred = %f" % (np.linalg.norm(self.E_prop_pred, 2))
 
@@ -1347,16 +1390,35 @@ class ActiveInferenceExperiment(object):
         fig = pl.figure()
         fig.suptitle("Mode: %s using %s (X: FM input, state pred: FM output)" % (self.mode, self.model))
         
-        ax = fig.add_subplot(211)
+        ax = fig.add_subplot(311)
         ax.set_title("Proprioceptive goal")
-        ax.plot(self.logs["goal_prop"], "-x")
-        ax.plot(self.logs["S_prop_pred"])
+        ax.plot(self.logs["goal_prop"], "-x", label="goal_p")
+        ax.plot(self.logs["S_prop_pred"], label="pred_p")
+        ax.plot(self.logs["M_prop_pred"], label="state_p")
+        ax.legend()
         # ax.plot(self.logs["E2P_pred"], "-x")
         
-        ax = fig.add_subplot(212)
+        ax = fig.add_subplot(312)
         ax.set_title("Proprioceptive prediction error")
         # ax.plot(np.abs(self.logs["E_prop_pred"]), "-x")
-        ax.plot(self.logs["E_prop_pred"], "-x")
+        ax.plot(self.logs["E_prop_pred"],  label="err_p")
+        ax.plot(self.logs["E_prop_pred_fast"], label="err_p lp")
+        ax.plot(self.logs["E_prop_pred_slow"], label="err_p llp")
+        ax.legend()
+        
+        ax = fig.add_subplot(313)
+        ax.set_title("Derivative of proprioceptive prediction error")
+        ax.plot(self.logs["dE_prop_pred_fast"], label="derr_p")
+        # ax.plot(self.logs["d_E_prop_pred_"], "-x", label="derr_p/dt lp")
+        # ax.plot(self.logs["d_E_prop_pred_"] * self.logs["E_prop_pred_fast"], "-x", label="(derr_p/dt lp) * (err_p lp)")
+        # x = np.diff(self.logs["d_E_prop_pred_"], axis=0)
+        # print "x", x
+        # ax.plot(x, "-x", label="d^2E")
+        # ax.plot(self.logs["dE_prop_pred_fast"] * self.logs["E_prop_pred_fast"], label="d_err_fast * (err_p lp)")
+        # ax.plot(np.abs(self.logs["E_prop_pred_fast"]), label="err_p lp")
+        # ax.plot((self.logs["E_prop_pred_fast"] - self.logs["E_prop_pred_slow"]) * np.abs(self.logs["E_prop_pred_fast"]), label="err_p lp - err_p llp")
+        ax.legend()
+        # ax.set_yscale("log")
         
         # ax = fig.add_subplot(613)
         # ax.set_title("Proprioceptive state prediction")
