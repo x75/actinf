@@ -269,13 +269,13 @@ class ActiveInferenceExperiment(object):
 
             # pimp environment
             self.environment.motor_aberration["type"] = "sin"
-            self.environment.motor_aberration["coef"] = -0.7
+            self.environment.motor_aberration["coef"] = np.random.uniform(-1.0, 1.0, self.odim) # -0.7
             
             # learning loop hooks
+            self.rh_learn_proprio_hooks["hook04"] = self.lh_sample_discrete_uniform_goal
             self.rh_learn_proprio_hooks["hook01"] = self.lh_learn_proprio_base_2
             self.rh_learn_proprio_hooks["hook02"] = self.lh_learn_proprio_e2p2e
             self.rh_learn_proprio_hooks["hook03"] = self.lh_do_logging
-            self.rh_learn_proprio_hooks["hook04"] = self.lh_sample_discrete_uniform_goal
             # self.rh_learn_proprio_hooks["hook05"] = self.lh_sample_error_gradient
 
             # experiment loop hooks
@@ -283,7 +283,8 @@ class ActiveInferenceExperiment(object):
             self.run_hooks["hook01"] = partial(self.rh_learn_proprio, iter_start = 0, iter_end = self.numsteps)
             self.run_hooks["hook02"] = self.rh_learn_proprio_save
             # self.run_hooks["hook03"] = self.rh_check_for_model_and_map
-            self.run_hooks["hook99"] = self.experiment_plot
+            self.run_hooks["hook98"] = self.experiment_plot
+            self.run_hooks["hook99"] = self.make_plot_model_function_and_exec # sweep model after learning
             
         elif mode == "basic_operation_1D_M1":
             """Experiment: Basic operation M1 on 1-dimensional data"""
@@ -418,7 +419,7 @@ class ActiveInferenceExperiment(object):
     def rh_system_generate_sweep_input(self):
         """generate system inputs for grid sweep"""
         # create meshgrid over proprio dimensions
-        sweepsteps = 21
+        sweepsteps = 11 # 21
         dim_axes = [np.linspace(self.environment.conf.m_mins[i], self.environment.conf.m_maxs[i], sweepsteps) for i in range(self.environment.conf.m_ndims)]
         full_axes = np.meshgrid(*tuple(dim_axes), indexing='ij')
 
@@ -571,7 +572,8 @@ class ActiveInferenceExperiment(object):
         # compute target for the prediction error driven forward model
         # if i % 10 == 0: # play with decreased update rates
         # self.y_ = self.S_prop_pred - (self.E_prop_pred * self.eta_fwd_mdl) - self.E_prop_pred_state * (self.eta_fwd_mdl/2.0)
-        modulator = self.grad # np.sign(self.grad)
+        # modulator = self.grad
+        modulator = np.sign(self.grad)
         self.y_ = self.S_prop_pred - (self.E_prop_pred * self.eta_fwd_mdl * modulator)
         # modulator = -np.sign(self.dE_prop_pred_fast / -E_prop_pred_tm1)
         # self.y_ = self.S_prop_pred - (self.E_prop_pred * self.eta_fwd_mdl * modulator)
@@ -965,10 +967,11 @@ class ActiveInferenceExperiment(object):
                 self.goal_prop = np.random.uniform(self.environment.conf.m_mins, self.environment.conf.m_maxs, (1, self.odim))
 
     def rh_model_generate_sweep_input(self):
+        """generate grid sweeping input space, consider random sample?"""
         # sweep error and record output
         # ERROR =
         # meshgrid resolution
-        sweepsteps = 21
+        sweepsteps = 11 # 21
         dim_axes = [np.linspace(self.environment.conf.s_mins[i], self.environment.conf.s_maxs[i], sweepsteps) for i in range(self.environment.conf.s_ndims)]
         full_axes = np.meshgrid(*tuple(dim_axes), indexing='ij')
 
@@ -1044,9 +1047,10 @@ class ActiveInferenceExperiment(object):
         pred = []
         for i in range(self.X_model_sweep.shape[0]): # loop over start states
             print "trying a predict with X = %d,%s" % (0, self.X_model_sweep.shape)
+            # this might go wrong with different models
             pred.append(self.mdl.predict(self.X_model_sweep[i]))
-        # print "pred.shape", pred.shape
         pred = np.array(pred)
+        print "pred.shape", pred.shape
         self.Y_model_sweep = pred
                 
     def rh_model_plot(self):
@@ -1624,7 +1628,7 @@ def plot_colormeshmatrix_reduced(X, Y, ymin = None, ymax = None):
         for j in range(Y.shape[2]):
             # print "i, j", i, j, Xs, Ys
             ax = fig.add_subplot(gs[j, i])
-            pcm = ax.pcolormesh(X[:,:,0], X[:,:,1], Y[:,:,0], vmin = ymin, vmax = ymax)
+            pcm = ax.pcolormesh(X[:,:,i], X[:,:,X.shape[2]/2+i], Y[:,:,j], vmin = ymin, vmax = ymax)
             # ax.plot(Xs.as_matrix()[:,i], Ys.as_matrix()[:,j], "ko", alpha = alpha)
             ax.set_xlabel("goal")
             ax.set_ylabel("error")
