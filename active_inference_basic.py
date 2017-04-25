@@ -14,7 +14,7 @@ from explauto.environment.pointmass import PointmassEnvironment
 
 # from sklearn.neighbors import KNeighborsRegressor
 
-from utils.functions import gaussian
+# from utils.functions import gaussian
 
 from actinf_models import ActInfKNN, ActInfGMM, ActInfHebbianSOM
 
@@ -59,6 +59,10 @@ modes = [
     "type04_ext_prop",
     "type05_multiple_models",
 ]
+
+def gaussian(m, s, x):
+    """univariate gaussian"""
+    return 1/(s*np.sqrt(2*np.pi)) * np.exp(-0.5*np.square((m-x)/s))
 
 class ActiveInferenceExperiment(object):
     def __init__(self, mode = "type01_state_prediction_error",
