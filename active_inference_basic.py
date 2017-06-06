@@ -1095,7 +1095,7 @@ class ActiveInferenceExperiment(object):
         assert hasattr(self, "X_model_sweep")
         pred = []
         for i in range(self.X_model_sweep.shape[0]): # loop over start states
-            print "trying a predict with X = %d, %s" % (i, self.X_model_sweep.shape)
+            print "trying a predict with X[%d] = %s" % (i, self.X_model_sweep.shape)
             # this might go wrong with different models
             pred.append(self.mdl.predict(self.X_model_sweep[i]))
         pred = np.array(pred)

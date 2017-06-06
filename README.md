@@ -27,12 +27,18 @@ need specifically:
    models
  - active_inference_basic.py: basic experiments, here we use explauto's
    simple_arm in low-dimensional configuration (3 joints) to learn to
-   control the arm under dynamic online goals. two modes:
+   control the arm under dynamic online goals. Several program
+   execution modes are available:
   - type03_1_prediction_error: most basic proprioceptive only model
   - type03_goal_prediction_error: most basic proprioceptive only model
   - type04_ext_prop: this introduces an e2p map that's built with a
     gaussian mixture model using PyPR lib so we can pass down
     exteroceptive goals to the proprioceptive layer
+  - test_models: basic model test
+  - plot_system: plot the system response as scattermatrix
+  - basic_operation_1D_M1: demonstrate the basic operation of model
+    type M1 on a one-dimensional system
+  - m2_prediction_errors: analyze prediction errors on model type M2
  - active_inference_naoqi.py: base proprio only learning using webots
    and naoqi on a simulated nao
  - active_inference_hebbsom.py: this is just replicating the gaussian
