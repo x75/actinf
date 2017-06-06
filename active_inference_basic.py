@@ -50,7 +50,6 @@ SAVEPLOTS = True
 # DONE: modify this code to use the GMM model from actinf_models.py (ca. 20161210)
 
 modes = [
-    "m2_prediction_errors",
     "test_models",
     "type01_state_prediction_error",
     "type02_state",
@@ -58,6 +57,9 @@ modes = [
     "type03_goal_prediction_error",
     "type04_ext_prop",
     "type05_multiple_models",
+    "m2_prediction_errors",
+    "basic_operation_1D_M1",
+    "plot_system",
 ]
 
 actinf_environments = [
@@ -1085,8 +1087,8 @@ class ActiveInferenceExperiment(object):
         # print X_accum
         X = X_accum
         # X's and pred's indices now mean: slowest: goal, e1, e2, fastest: e3
+        self.X_model_sweep = X.copy()
         return X
-        # self.X_model_sweep = X.copy()
         # print "self.X_model_sweep.shape", self.X_model_sweep.shape
 
     def rh_model_sweep(self):
@@ -1098,7 +1100,7 @@ class ActiveInferenceExperiment(object):
             pred.append(self.mdl.predict(self.X_model_sweep[i]))
         pred = np.array(pred)
         print "pred.shape", pred.shape
-        # self.Y_model_sweep = pred
+        self.Y_model_sweep = pred
         return pred
                 
     def rh_model_plot(self):
@@ -1131,15 +1133,15 @@ class ActiveInferenceExperiment(object):
         pl.ioff()
 
         # generate model input sweep as meshgrid
-        self.X_model_sweep = self.rh_model_sweep_generate_input_grid()
+        X_accum = self.rh_model_sweep_generate_input_grid()
         print "map_model_type03_goal_prediction_error self.X_model_sweep = %s" % (self.X_model_sweep.shape,)
 
         # execute the model on the sweep meshgrid
-        self.Y_model_sweep = self.rh_model_sweep()
+        pred = self.rh_model_sweep()
         print "map_model_type03_goal_prediction_error self.Y_model_sweep = %s" % (self.Y_model_sweep.shape,)
 
-        X_accum = self.X_model_sweep
-        pred = self.Y_model_sweep
+        # X_accum = self.X_model_sweep
+        # pred = self.Y_model_sweep
         numgrid = self.Y_model_sweep.shape[0]
         
         # ############################################################
