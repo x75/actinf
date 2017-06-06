@@ -444,6 +444,7 @@ class ActInfGMM(ActInfModel):
                 self.cond = X[(i+ref_interval) % numsamplesteps] # self.X__[i,:3]
                 # self.cond = np.array()
                 # self.cond[:2] = X_
+                # print(self.cond, out_dims, X.shape)
                 self.cond[out_dims] = np.nan
                 (self.cen_con, self.cov_con, self.new_p_k) = gmm.cond_dist(self.cond, self.cen_lst, self.cov_lst, self.p_k)
                 # print "run_hook_e2p_sample gmm.cond_dist:", np.array(self.cen_con).shape, np.array(self.cov_con).shape, self.new_p_k.shape

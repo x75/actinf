@@ -1,8 +1,8 @@
 # actinf - Active Inference
 
-Sensorimotor learning experiments using the active inference on
-predictive coding approach. Inspired by the input from Bruno Lara and
-Guido Schillaci.
+A set of sensorimotor learning experiments using the active inference
+and predictive coding approach. Inspired by the input from Bruno Lara
+and Guido Schillaci.
 
 This just came out of my main work repo as a submodule for easier
 sharing. This module is work in progress so please expect the
@@ -19,14 +19,16 @@ need specifically:
  - PyPR: pip install pypr for gaussian mixtures with conditional inference
  - kohonen, SOM library, also use my fork at
    https://github.com/x75/kohonen, branch is master. We need this in active_inference_hebbsom.py
+ - otl: Harold Soh's online temporal learning library, use my github import from https://github.com/x75/otl
 
 ## Files
 
  - actinf_models.py: knn, soesgp and storkgp based online learning
    models
- - active_inference_basic.py: base experiment, here we use explauto's
+ - active_inference_basic.py: basic experiments, here we use explauto's
    simple_arm in low-dimensional configuration (3 joints) to learn to
    control the arm under dynamic online goals. two modes:
+  - type03_1_prediction_error: most basic proprioceptive only model
   - type03_goal_prediction_error: most basic proprioceptive only model
   - type04_ext_prop: this introduces an e2p map that's built with a
     gaussian mixture model using PyPR lib so we can pass down
@@ -36,7 +38,6 @@ need specifically:
  - active_inference_hebbsom.py: this is just replicating the gaussian
    mixture model functionality using SOMs with Hebbian associative
    connections and conditional inference
-
 
 ## Examples
 
