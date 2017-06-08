@@ -1,5 +1,5 @@
 
-import argparse, cPickle, os
+import argparse, cPickle, os, sys
 from collections import OrderedDict
 from functools   import partial # mhm :)
 
@@ -51,16 +51,13 @@ SAVEPLOTS = True
 # DONE: modify this code to use the GMM model from actinf_models.py (ca. 20161210)
 
 modes = [
-    "test_models",
-    "type01_state_prediction_error",
-    "type02_state",
-    "type03_1_prediction_error",
-    "type03_goal_prediction_error",
-    "type04_ext_prop",
-    "type05_multiple_models",
-    "m2_prediction_errors",
-    "basic_operation_1D_M1",
+    "m1_goal_error_1d",
+    "m1_goal_error_nd",
+    "m1_goal_error_nd_e2p",
+    "m2_error_nd",
+    "m2_error_nd_ext",
     "plot_system",
+    "test_models", # simple model test
 ]
 
 actinf_environments = [
@@ -74,7 +71,7 @@ def gaussian(m, s, x):
     return 1/(s*np.sqrt(2*np.pi)) * np.exp(-0.5*np.square((m-x)/s))
 
 class ActiveInferenceExperiment(object):
-    def __init__(self, mode = "type01_state_prediction_error",
+    def __init__(self, mode = "m1_goal_error_nd",
                  model = "knn", numsteps = 1000, idim = None,
                  environment_str = "simplearm",
                  goal_sample_interval = 50, e2pmodel = None,
@@ -93,6 +90,8 @@ class ActiveInferenceExperiment(object):
                 
         self.saveplots = saveplots
 
+        self.environment_str = environment_str
+        
         # intialize robot environment
         if environment_str == "simplearm":
             self.environment = Environment.from_configuration('simple_arm', 'low_dimensional')
@@ -225,15 +224,8 @@ class ActiveInferenceExperiment(object):
         list of hooked functions implementing the particular learning setup. The
         rh_learn_proprio function is looped over numstep times.
         """
-        # FIXME: obsolete
-        if mode == "type01_state_prediction_error":
-            self.run_hooks["hook01"] = self.rh_state_prediction_error
-            
-        # FIXME: obsolete
-        elif mode == "type02_state":
-            self.run = self.rh_state
-            
-        elif mode == "type03_goal_prediction_error":
+        
+        if mode == "m1_goal_error_nd":
             """active inference / predictive coding
 
             most basic and first working version, learning in proprioceptive
@@ -260,7 +252,7 @@ class ActiveInferenceExperiment(object):
             self.run_hooks["hook03"] = self.rh_check_for_model_and_map
             self.run_hooks["hook99"] = self.experiment_plot
 
-        elif mode == "type03_1_prediction_error":
+        elif mode == "m2_error_nd":
             """active inference / predictive coding: most basic version (?), proprioceptive only
         
             just goal/state error -> mdl -> goal/state error prediction -> goal/state error -> update forward model"""
@@ -275,7 +267,7 @@ class ActiveInferenceExperiment(object):
             # self.run_hooks["hook04"] = self.rh_check_for_model_and_map
             self.run_hooks["hook99"] = self.experiment_plot
                         
-        elif mode == "type04_ext_prop":
+        elif mode == "m1_goal_error_nd_e2p":
             """run basic proprio learning, record extero/proprio data, fit probabilistic / multivalued model 'mm'
             to e/p data, then drive the trained proprio model with exteroceptive goals that
             get translated to proprio goals using 'mm'"""
@@ -298,10 +290,7 @@ class ActiveInferenceExperiment(object):
             self.run_hooks["hook08"] = self.rh_e2p_sample_and_drive_plot
             self.run_hooks["hook99"] = self.experiment_plot
             
-        elif mode == "type05_multiple_models":
-            self.run = self.run_type05_multiple_models
-
-        elif mode == "m2_prediction_errors":
+        elif mode == "m2_error_nd_ext":
             """active inference / predictive coding
 
             most basic version, proprioceptive only
@@ -331,7 +320,7 @@ class ActiveInferenceExperiment(object):
             self.run_hooks["hook98"] = self.experiment_plot
             self.run_hooks["hook99"] = self.make_plot_model_function_and_exec # sweep model after learning
             
-        elif mode == "basic_operation_1D_M1":
+        elif mode == "m1_goal_error_1d":
             """Experiment: Basic operation M1 on 1-dimensional data"""
 
             # learning loop hooks
@@ -357,6 +346,7 @@ class ActiveInferenceExperiment(object):
                         
         else:
             print "FAIL: unknown mode, choose from %s" % (", ".join(modes))
+            sys.exit(1)
 
     def make_plot_system_function_and_exec(self):
         """create specific dictionary of functions to be passed to composition"""
@@ -504,8 +494,10 @@ class ActiveInferenceExperiment(object):
         # df = pd.DataFrame(scatter_data_raw, columns=["x_%d" % i for i in range(scatter_data_raw.shape[1])])
         df = pd.DataFrame(scatter_data_raw, columns=scatter_data_cols)
 
+        title = "%s: i/o behvaiour for %s, in = X, out = Y" % (self.mode, self.environment_str,)
+        
         # plot_scattermatrix(df)
-        plot_scattermatrix_reduced(df)
+        plot_scattermatrix_reduced(df, title = title)
 
     ################################################################################
     # model sweep hooks
@@ -517,7 +509,7 @@ class ActiveInferenceExperiment(object):
             self.load_run_data()
             print "%s.rh_check_for_model_and_map\n    loaded mdl = %s with idim = %d, odim = %d" % (self.__class__.__name__, self.mdl, self.mdl.idim, self.mdl.odim)
             
-            self.map_model_type03_goal_prediction_error()
+            self.map_model_m1_goal_error_nd()
             return
 
     # proprio learning base loop
@@ -596,31 +588,11 @@ class ActiveInferenceExperiment(object):
             
             # pl.plot(S_, M_, "ko", alpha=0.4)
             # pl.show()
-        
-        if np.sum(np.abs(self.goal_prop - self.goal_prop_tm1)) > 1e-2:
-            self.E_prop_pred_fast = np.random.uniform(-1e-5, 1e-5, self.E_prop_pred_fast.shape)
-            self.E_prop_pred_slow = np.random.uniform(-1e-5, 1e-5, self.E_prop_pred_slow.shape)
-            # recompute error
-            # self.E_prop_pred = self.M_prop_pred - self.goal_prop
-            # self.E_prop_pred[:] = np.random.uniform(-1e-5, 1e-5, self.E_prop_pred.shape)
-            #else: 
-                
-        E_prop_pred_tm1 = self.E_prop_pred.copy()
 
-        # prediction error's
-        self.E_prop_pred_state = self.S_prop_pred - self.M_prop_pred
-        self.E_prop_pred_goal  = self.M_prop_pred - self.goal_prop
-        self.E_prop_pred = self.E_prop_pred_goal
+            
         
-        self.E_prop_pred__fast = self.E_prop_pred_fast.copy()
-        self.E_prop_pred_fast  = self.coef_smooth_fast * self.E_prop_pred_fast + (1 - self.coef_smooth_fast) * self.E_prop_pred
-
-        self.E_prop_pred__slow = self.E_prop_pred_slow.copy()
-        self.E_prop_pred_slow  = self.coef_smooth_slow * self.E_prop_pred_slow + (1 - self.coef_smooth_slow) * self.E_prop_pred
-                
-        self.dE_prop_pred_fast = self.E_prop_pred_fast - self.E_prop_pred__fast
-        self.d_E_prop_pred_ = self.coef_smooth_slow * self.d_E_prop_pred_ + (1 - self.coef_smooth_slow) * self.dE_prop_pred_fast
-        
+        self.prediction_errors_extended()
+            
         # # prediction error's variant
         # self.E_prop_pred_state = self.S_prop_pred - self.M_prop_pred
         # self.E_prop_pred = self.E_prop_pred_state
@@ -646,6 +618,31 @@ class ActiveInferenceExperiment(object):
         self.mdl.fit(self.X_, self.y_)
 
         self.goal_prop_tm1 = self.goal_prop.copy()
+
+    def prediction_errors_extended(self):
+        if np.sum(np.abs(self.goal_prop - self.goal_prop_tm1)) > 1e-2:
+            self.E_prop_pred_fast = np.random.uniform(-1e-5, 1e-5, self.E_prop_pred_fast.shape)
+            self.E_prop_pred_slow = np.random.uniform(-1e-5, 1e-5, self.E_prop_pred_slow.shape)
+            # recompute error
+            # self.E_prop_pred = self.M_prop_pred - self.goal_prop
+            # self.E_prop_pred[:] = np.random.uniform(-1e-5, 1e-5, self.E_prop_pred.shape)
+            #else:            
+                
+        E_prop_pred_tm1 = self.E_prop_pred.copy()
+
+        # prediction error's
+        self.E_prop_pred_state = self.S_prop_pred - self.M_prop_pred
+        self.E_prop_pred_goal  = self.M_prop_pred - self.goal_prop
+        self.E_prop_pred = self.E_prop_pred_goal
+        
+        self.E_prop_pred__fast = self.E_prop_pred_fast.copy()
+        self.E_prop_pred_fast  = self.coef_smooth_fast * self.E_prop_pred_fast + (1 - self.coef_smooth_fast) * self.E_prop_pred
+
+        self.E_prop_pred__slow = self.E_prop_pred_slow.copy()
+        self.E_prop_pred_slow  = self.coef_smooth_slow * self.E_prop_pred_slow + (1 - self.coef_smooth_slow) * self.E_prop_pred
+                
+        self.dE_prop_pred_fast = self.E_prop_pred_fast - self.E_prop_pred__fast
+        self.d_E_prop_pred_ = self.coef_smooth_slow * self.d_E_prop_pred_ + (1 - self.coef_smooth_slow) * self.dE_prop_pred_fast
         
     ################################################################################
     # proprio learning model variant 0
@@ -678,7 +675,9 @@ class ActiveInferenceExperiment(object):
         # prediction error's
         self.E_prop_pred_goal  = self.M_prop_pred - self.goal_prop
         self.E_prop_pred = self.E_prop_pred_goal
-                
+
+        self.prediction_errors_extended()            
+        
         # # prediction error's variant
         # self.E_prop_pred_state = self.S_prop_pred - self.M_prop_pred
         # self.E_prop_pred = self.E_prop_pred_state
@@ -694,6 +693,8 @@ class ActiveInferenceExperiment(object):
 
         # fit the model
         self.mdl.fit(self.X_, self.y_)
+
+        self.goal_prop_tm1 = self.goal_prop.copy()
 
     ################################################################################
     # proprio learning model variant 1
@@ -738,6 +739,8 @@ class ActiveInferenceExperiment(object):
         else:
             # goal unchanged
             self.X_ = np.hstack((self.E_prop_pred)).reshape((1, self.idim)) # model input: just prediction error
+
+        self.prediction_errors_extended()            
 
         # compute new prediction
         self.S_prop_pred = self.mdl.predict(self.X_) # state prediction
@@ -944,98 +947,15 @@ class ActiveInferenceExperiment(object):
         pl.show()
         
     def run(self):
-        """active inference run method definition, iterate dictionary of hooks and execute each
+        """ActiveInferenceExperiment.run
+
+        run method iterates the dictionary of hooks and executes each
         """
         for k, v in self.run_hooks.items():
             print "key = %s, value = %s" % (k, v)
             # execute value which is a function pointer
             v()
         
-    def rh_state_prediction_error(self):
-        """active inference / predictive coding: early test, defunct (type01)"""
-        for i in range(self.numsteps):
-            self.X_ = np.hstack((self.goal_prop, self.E_prop_pred)) # model input: goal and prediction error
-            # print self.X_
-            self.S_prop_pred = self.mdl.predict(self.X_) # state prediction
-            self.E_prop_pred = self.S_prop_pred - self.M_prop_pred
-            # e_pred = s_pred - goal
-
-            # hack motor primitive
-            self.M_prop_pred = self.E_prop_pred + self.M_prop_pred
-            # m = e_pred # + m
-            self.M_prop_pred += np.random.normal(0, 0.01, self.M_prop_pred.shape)
-
-            # execute command
-            self.S_ext = self.environment.compute_sensori_effect(self.M_prop_pred.T)
-            # print self.S_ext
-
-            self.y_ = self.M_prop_pred.copy()
-            
-            # self.logs["X_"].append(self.X_[0,:])
-            # self.logs["y_"].append(self.y_[0,:])
-            # # y_.append(goal[0,:])
-        
-            self.mdl.fit(self.X_, self.y_)
-    
-            # print s_pred
-            print "self.X_.shape, s_pred.shape, e_pred.shape, m.shape, self.S_ext.shape", self.X_.shape, self.S_prop_pred.shape, self.E_prop_pred.shape, self.M_prop_pred.shape, self.S_ext.shape
-
-            # self.logs["S_prop_pred"][i] = self.S_prop_pred
-            # self.logs["E_prop_pred"][i] = self.E_prop_pred
-            # self.logs["M_prop_pred"][i]      = self.M_prop_pred
-
-            self.lh_do_logging(i)
-                
-            if i % 10 == 0:
-                self.goal_prop = np.random.uniform(-np.pi/2, np.pi/2, (1, self.odim))
-
-    def rh_state(self):
-        """active inference / predictive coding: another early test, defunct too (type02)"""
-        
-        for i in range(self.numsteps):
-            self.X_ = np.hstack((self.goal_prop, self.E_prop_pred)) # model input: goal and prediction error
-
-            self.S_prop_pred = self.mdl.predict(self.X_) # state prediction
-
-            # hack motor primitive
-            self.M_prop_pred = self.environment.compute_motor_command(self.S_prop_pred) #
-            # m1 = np.sin(m * 2) # * 1.333
-            # m = m1.copy()
-            # print m1 - m
-            # m += np.random.normal(0, 0.01, m.shape)
-
-            self.E_prop_pred = self.S_prop_pred - self.M_prop_pred # preliminary prediction error == command
-            # self.y_ = s_pred - e_pred
-            # m = e_pred # + m
-
-            # self.E_prop_pred = self.M_prop_pred - self.goal_prop # real prediction error
-            
-            # execute command
-            self.S_ext = self.environment.compute_sensori_effect(self.M_prop_pred.T)
-            # print self.S_ext
-
-            self.y_ = self.M_prop_pred.copy()
-            
-            # self.logs["X_"].append(self.X_[0,:])
-            # self.logs["y_"].append(self.y_[0,:])
-            # y_.append(goal[0,:])
-            # y_.append(self.y_[0,:])
-
-            self.mdl.fit(self.X_, self.M_prop_pred)
-            
-            # print s_pred
-            # print "self.X_.shape, s_pred.shape, e_pred.shape, m.shape, self.S_ext.shape", self.X_.shape, s_pred.shape, e_pred.shape, m.shape, self.S_ext.shape
-
-            # self.logs["S_prop_pred"][i] = self.S_prop_pred
-            # self.logs["E_prop_pred"][i] = self.E_prop_pred
-            # self.logs["M_prop_pred"][i]      = self.M_prop_pred
-            
-            self.lh_do_logging(i)
-            
-            if i % 50 == 0:
-                # goal = np.random.uniform(-np.pi/2, np.pi/2, (1, environment.conf.m_ndims))
-                self.goal_prop = np.random.uniform(self.environment.conf.m_mins, self.environment.conf.m_maxs, (1, self.odim))
-
     def rh_model_sweep_generate_input_random(self):
         return None
 
@@ -1102,7 +1022,7 @@ class ActiveInferenceExperiment(object):
         # sweepsteps = 5 # 11 # 21
         sweepsteps = 11 # 21
 
-        print "%s.map_model_type03_goal_prediction_error self.mdl.idim = %d, self.mdl.odim = %s" % (self.__class__.__name__, self.mdl.idim, self.mdl.odim)
+        print "%s.map_model_m1_goal_error_nd self.mdl.idim = %d, self.mdl.odim = %s" % (self.__class__.__name__, self.mdl.idim, self.mdl.odim)
 
         # construct linear axes for input sweep, goal assumed equal odim / motor dim
         # x_ = [np.linspace(-1., 1., sweepsteps) for i in range(self.mdl.odim))
@@ -1191,7 +1111,7 @@ class ActiveInferenceExperiment(object):
         plot_colormeshmatrix_reduced(self.X_model_sweep, self.Y_model_sweep, ymin = -1.0, ymax = 1.0)
         
     ################################################################################
-    def map_model_type03_goal_prediction_error(self):
+    def map_model_m1_goal_error_nd(self):
         """plot model output over model input sweep"""
         from mpl_toolkits.mplot3d import Axes3D
         doplot_scattermatrix = False
@@ -1201,11 +1121,11 @@ class ActiveInferenceExperiment(object):
 
         # generate model input sweep as meshgrid
         X_accum = self.rh_model_sweep_generate_input_grid()
-        print "map_model_type03_goal_prediction_error self.X_model_sweep = %s" % (self.X_model_sweep.shape,)
+        print "map_model_m1_goal_error_nd self.X_model_sweep = %s" % (self.X_model_sweep.shape,)
 
         # execute the model on the sweep meshgrid
         pred = self.rh_model_sweep()
-        print "map_model_type03_goal_prediction_error self.Y_model_sweep = %s" % (self.Y_model_sweep.shape,)
+        print "map_model_m1_goal_error_nd self.Y_model_sweep = %s" % (self.Y_model_sweep.shape,)
 
         # X_accum = self.X_model_sweep
         # pred = self.Y_model_sweep
@@ -1428,7 +1348,7 @@ class ActiveInferenceExperiment(object):
         # try and make it unstable?
         
     ################################################################################
-    def run_type03_1_prediction_error(self):
+    def run_m2_error_nd(self):
         """active inference / predictive coding: most basic version (?), proprioceptive only
         
         just goal/state error -> mdl -> goal/state error prediction -> goal/state error -> update forward model"""
@@ -1526,20 +1446,6 @@ class ActiveInferenceExperiment(object):
             
             self.lh_do_logging(i)
             
-    ################################################################################
-    def run_type05_multiple_models(self):
-        """active inference / predictive coding: first working, most basic version,
-        proprioceptive only
-        
-        goal -> goal state prediction -> goal/state error -> update forward model"""
-        
-        for i in range(self.numsteps):
-            # FIXME: this needs a major update: try with a pool of multiple models
-            if i == 1200:
-                self.environment.factor = 0.8
-                
-            self.X_ = np.hstack((self.goal_prop, self.E_prop_pred)) # model input: goal and prediction error
-
     ################################################################################
     # plotting
     def experiment_plot(self):
@@ -1687,7 +1593,7 @@ class ActiveInferenceExperiment(object):
             fig.savefig("fig_%03d_aie_experiment_plot_basic.pdf" % (fig.number), dpi=300)
         fig.show()
         
-def plot_scattermatrix(df):
+def plot_scattermatrix(df, title = "plot_scattermatrix"):
     """plot a scattermatrix of dataframe df"""
     if df is None:
         print "plot_scattermatrix: no data passed"
@@ -1703,12 +1609,13 @@ def plot_scattermatrix(df):
     # df = pd.DataFrame(scatter_data_raw, columns=["x_%d" % i for i in range(scatter_data_raw.shape[1])])
     sm = scatter_matrix(df, alpha=0.2, figsize=(10, 10), diagonal='hist')
     fig = sm[0,0].get_figure()
+    fig.suptitle(title)
     if SAVEPLOTS:
         fig.savefig("fig_%03d_scattermatrix.pdf" % (fig.number), dpi=300)
     fig.show()
     # pl.show()
 
-def plot_scattermatrix_reduced(df):
+def plot_scattermatrix_reduced(df, title = "plot_scattermatrix_reduced"):
     input_cols  = [i for i in df.columns if i.startswith("X")]
     output_cols = [i for i in df.columns if i.startswith("Y")]
     Xs = df[input_cols]
@@ -1723,7 +1630,7 @@ def plot_scattermatrix_reduced(df):
     gs = gridspec.GridSpec(Ys.shape[1], Xs.shape[1])
     pl.ioff()
     fig = pl.figure()
-    fig.suptitle("plot_scattermatrix_reduced")
+    fig.suptitle(title)
     # alpha = 1.0 / np.power(numsamples, 1.0/(Xs.shape[1] - 0))
     alpha = 0.2
     print "alpha", alpha
@@ -1824,7 +1731,7 @@ if __name__ == "__main__":
     parser.add_argument("-e2p", "--e2pmodel",             type=str, help="extero to proprio mapping [gmm]", default="gmm")
     parser.add_argument("-e",   "--environment",          type=str, help="which environment to use [simplearm] one of " + ", ".join(actinf_environments), default="simplearm")
     parser.add_argument("-gsi", "--goal_sample_interval", type=int, help="Interval at which to sample goals [50]", default=50)
-    parser.add_argument("-m",   "--mode",                 type=str, help="program execution mode, one of " + ", ".join(modes) + " [type04_ext_prop]", default="type04_ext_prop")
+    parser.add_argument("-m",   "--mode",                 type=str, help="program execution mode, one of " + ", ".join(modes) + " [m1_goal_error_nd_e2p]", default="m1_goal_error_nd_e2p")
     parser.add_argument("-md",  "--model",                type=str, help="learning machine [knn]", default="knn")
     parser.add_argument("-n",   "--numsteps",             type=int, help="number of learning steps [1000]", default=1000)
     parser.add_argument("-s",  "--seed",                  type=int, help="seed for RNG [0]",        default=0)

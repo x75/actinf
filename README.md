@@ -37,16 +37,16 @@ I just build these locally and export each directory into my PYTHONPATH.
    simple_arm in low-dimensional configuration (3 joints) to learn to
    control the arm under dynamic online goals. Several program
    execution modes are available:
-  - type03_goal_prediction_error: most basic proprioceptive only model
-  - type03_1_prediction_error: most basic proprioceptive only model
-  - type04_ext_prop: this introduces an e2p map that's built with a
+  - m1_goal_error_nd: most basic proprioceptive only model
+  - m2_error_nd: most basic proprioceptive only model
+  - m1_goal_error_nd_e2p: this introduces an e2p map that's built with a
     gaussian mixture model using PyPR lib so we can pass down
     exteroceptive goals to the proprioceptive layer
   - test_models: basic model test
   - plot_system: plot the system response as scattermatrix
-  - basic_operation_1D_M1: demonstrate the basic operation of model
+  - m1_goal_error_1d: demonstrate the basic operation of model
     type M1 on a one-dimensional system
-  - m2_prediction_errors: analyze prediction errors on model type M2
+  - m2_error_nd_ext: analyze prediction errors on model type M2
  - active_inference_naoqi.py: base proprio only learning using webots
    and naoqi on a simulated nao
  - active_inference_hebbsom.py: this is just replicating the gaussian
@@ -57,18 +57,18 @@ I just build these locally and export each directory into my PYTHONPATH.
 
 Run it like
 
-    python active_inference_basic.py --mode type03_goal_prediction_error
+    python active_inference_basic.py --mode m1_goal_error_nd
 
 which will run the basic proprioceptive only learning scenario.
 
 This will also run a p-only learning but different setup, FWDp only get's the error
 as an input.
 
-    python active_inference_basic.py --mode type03_1_prediction_error --numsteps 2000 --model knn
+    python active_inference_basic.py --mode m2_error_nd --numsteps 2000 --model knn
 
 This command
 
-    python active_inference_basic.py --mode type04_ext_prop --model knn --numsteps 1000
+    python active_inference_basic.py --mode m1_goal_error_nd_e2p --model knn --numsteps 1000
 
 which will run the combined etxtero/proprio learning scenario for 1000
 timesteps (the default anyway) and produce various plots along the way.

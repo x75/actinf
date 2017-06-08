@@ -1,12 +1,15 @@
 """Active inference project code
 
+Oswald Berthold, 2016-2017
+
 This file contains the learners which can be used as adaptive models of
 sensorimotor contexts. For forward models there are
  - nearest neighbour
  - sparse online gaussian process models powered by Harold Soh's OTL library
  - gaussian mixture model
+ - hebbian connected SOM 
 
-TODO: think about a common calling convention for all model types
+TODO: common calling convention for all model types
    - including 'predict_naive' and 'predict_full' methods that would capture
      returning confidences about the current prediction
    - other variables that might be used by the context to modulate
@@ -17,11 +20,10 @@ TODO: consistency problem when sampling from probabilistic models (gmm, hebbsom,
 issues:
  - som track residual error from map training
  - som use residual for adjusting rbf width
- - som extend sampling to sample actual prediction from gaussian with unit's mu and sigma
+ - som extend sampling to sample actual prediction from gaussian with
+   unit's mu and sigma
  - plot current / final som configuration
  - plot densities
- - 
-
 """
 
 
@@ -59,7 +61,7 @@ try:
 except ImportError, e:
     print("Couldn't import lmjohns3's kohonon SOM lib", e)
 
-model_classes = ["KNN", "SOESGP", "STORKGP", "GMM", "HebbSOM"]
+model_classes = ["KNN", "SOESGP", "STORKGP", "GMM", "HebbSOM", "all"]
         
 class ActInfModel(object):
     """Base class for active inference function approximators / regressors"""
@@ -1452,7 +1454,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument("-d", "--datafile",     type=str, help="datafile containing t x (dim_extero + dim_proprio) matrix ", default="data/simplearm_n1000/EP_1000.npy")
-    parser.add_argument("-m", "--modelclass",   type=str, help="Which model class to test [KNN], " + ", ".join(model_classes), default="KNN")
+    parser.add_argument("-m", "--modelclass",   type=str, help="Which model class [all] to test from " + ", ".join(model_classes), default="all")
     parser.add_argument("-n", "--numsteps",     type=int, help="Number of datapoints [1000]", default=1000)
     parser.add_argument("-ne", "--numepisodes", type=int, help="Number of episodes [10]", default=10)
     parser.add_argument("-s",  "--seed",        type=int, help="seed for RNG [0]",        default=0)
