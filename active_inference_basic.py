@@ -8,6 +8,7 @@ import pylab as pl
 import matplotlib.gridspec as gridspec
 import pandas as pd
 
+import explauto
 from explauto import Environment
 from explauto.environment import environments
 from explauto.environment.pointmass import PointmassEnvironment
@@ -301,14 +302,19 @@ class ActiveInferenceExperiment(object):
             self.run = self.run_type05_multiple_models
 
         elif mode == "m2_prediction_errors":
-            """active inference / predictive coding: first working, most basic version,
-            proprioceptive only
+            """active inference / predictive coding
 
-            goal -> goal state prediction -> goal/state error -> update forward model"""
+            most basic version, proprioceptive only
 
+            goal -> goal state prediction -> goal/state error -> update forward model
+            """
+
+            # only works for pointmass?
+            assert isinstance(self.environment, PointmassEnvironment), "Need PointmassEnvironment, not %s" % (self.environment,)
+            
             # pimp environment
-            self.environment.motor_aberration["type"] = "sin"
-            self.environment.motor_aberration["coef"] = np.random.uniform(-1.0, 1.0, self.odim) # -0.7
+            self.environment.motor_aberration["type"] = "linsin"
+            self.environment.motor_aberration["coef"] = 3.0 # np.random.uniform(-1.0, 1.0, self.odim) # -0.7
             
             # learning loop hooks
             self.rh_learn_proprio_hooks["hook04"] = self.lh_sample_discrete_uniform_goal
@@ -372,7 +378,7 @@ class ActiveInferenceExperiment(object):
         
         funcdict = OrderedDict()
         # create sweep input data
-        funcdict["hook01"] = self.rh_model_sweep_generate_input_grid
+        funcdict["hook01"] = self.rh_model_sweep_generate_input_grid_a
         # sweep and create output data
         funcdict["hook02"] = self.rh_model_sweep
         # plot result
@@ -456,9 +462,13 @@ class ActiveInferenceExperiment(object):
 
     # system sweep hooks
     def rh_system_generate_sweep_input(self):
-        """generate system inputs for grid sweep"""
+        """ActiveInferenceExperiment.rh_system_generate_sweep_input
+
+        generate system inputs on a grid to sweep the system
+        """
+        
         # create meshgrid over proprio dimensions
-        sweepsteps = 11 # 21
+        sweepsteps = 21 # 11
         dim_axes = [np.linspace(self.environment.conf.m_mins[i], self.environment.conf.m_maxs[i], sweepsteps) for i in range(self.environment.conf.m_ndims)]
         full_axes = np.meshgrid(*tuple(dim_axes), indexing='ij')
 
@@ -528,7 +538,13 @@ class ActiveInferenceExperiment(object):
     ################################################################################
     # proprio learning model variant 2 using more of prediction error
     def lh_learn_proprio_base_2(self, i):
-        """Basic proprio learning hook using goal prediction error model M1"""
+        """ActiveInferenceExperiment.lh_learn_proprio_base_2
+
+        Modified proprio learning hook using state prediction error model M1
+        with additional gradient sampling aronud the current working point
+        to enable learning of non-monotonic functions
+        """
+        
         assert self.goal_prop is not None, "self.goal_prop at iter = %d is None, should by ndarray" % i
         assert self.goal_prop.shape == (1, self.odim), "self.goal_prop.shape is wrong, should be %s" % (1, self.odim)
                 
@@ -551,7 +567,7 @@ class ActiveInferenceExperiment(object):
 
         # sample error gradient
         numsamples = 20
-        if i % 50 == 0:
+        if i % 1 == 0:
             from sklearn import linear_model
             import sklearn
             from sklearn import kernel_ridge
@@ -561,7 +577,8 @@ class ActiveInferenceExperiment(object):
             S_ = []
             M_ = []
             for i in range(numsamples):
-                S_.append(np.random.normal(self.S_prop_pred, 0.01 * self.environment.conf.m_maxs, self.S_prop_pred.shape))
+                # S_.append(np.random.normal(self.S_prop_pred, 0.01 * self.environment.conf.m_maxs, self.S_prop_pred.shape))
+                S_.append(np.random.normal(self.S_prop_pred, 0.3 * self.environment.conf.m_maxs, self.S_prop_pred.shape))
                 # print "S_[-1]", S_[-1]
                 M_.append(self.environment.compute_motor_command(S_[-1]))
                 S_ext_ = self.environment.compute_sensori_effect(M_[-1]).reshape((1, self.dim_ext))
@@ -615,6 +632,7 @@ class ActiveInferenceExperiment(object):
         # self.y_ = self.S_prop_pred - (self.E_prop_pred * self.eta_fwd_mdl) - self.E_prop_pred_state * (self.eta_fwd_mdl/2.0)
         # modulator = self.grad
         modulator = np.sign(self.grad)
+        print "modulator", modulator
         self.y_ = self.S_prop_pred - (self.E_prop_pred * self.eta_fwd_mdl * modulator)
         # modulator = -np.sign(self.dE_prop_pred_fast / -E_prop_pred_tm1)
         # self.y_ = self.S_prop_pred - (self.E_prop_pred * self.eta_fwd_mdl * modulator)
@@ -630,9 +648,13 @@ class ActiveInferenceExperiment(object):
     ################################################################################
     # proprio learning model variant 0
     def lh_learn_proprio_base_0(self, i):
-        """Basic proprio learning hook using goal prediction error model M1"""
-        assert self.goal_prop is not None, "self.goal_prop at iter = %d is None, should by ndarray" % i
-        assert self.goal_prop.shape == (1, self.odim), "self.goal_prop.shape is wrong, should be %s" % (1, self.odim)
+        """ActiveInferenceExperiment.lh_learn_proprio_base_0
+
+        Basic proprio learning hook using goal prediction error model M1
+        """
+        
+        assert self.goal_prop is not None, "self.goal_prop at iter = %d is None, should be ndarray" % i
+        assert self.goal_prop.shape == (1, self.odim), "self.goal_prop.shape %s is wrong, should be %s" % (self.goal_prop.shape, (1, self.odim))
 
         # prepare model input X as goal and prediction error
         self.X_ = np.hstack((self.goal_prop, self.E_prop_pred))
@@ -678,6 +700,11 @@ class ActiveInferenceExperiment(object):
         if not hasattr(self, "X_"): self.X_ = np.hstack((self.E_prop_pred)).reshape((1, self.idim)) # initialize model input
         
     def lh_learn_proprio_base_1(self, i):
+        """ActiveInferenceExperiment.lh_learn_proprio_base_1
+
+        Modified proprio learning hook using state prediction error model M2
+        """
+        
         # create a new proprioceptive state, M_prop is the motor state, S_prop is the incremental change
         self.M_prop_pred = self.environment.compute_motor_command(self.M_prop_pred + self.S_prop_pred) #
             
@@ -1009,7 +1036,59 @@ class ActiveInferenceExperiment(object):
 
     def rh_model_sweep_generate_input_random(self):
         return None
-                
+
+    def rh_model_sweep_generate_input_grid_a(self):
+        sweepsteps = 11 # 21
+        # extero config
+        dim_axes = [np.linspace(self.environment.conf.s_mins[i], self.environment.conf.s_maxs[i], sweepsteps) for i in range(self.environment.conf.s_ndims)]
+        # dim_axes = [np.linspace(self.environment.conf.s_mins[i], self.environment.conf.s_maxs[i], sweepsteps) for i in range(self.mdl.idim)]
+        print "rh_model_sweep_generate_input_grid: s_ndims = %d, dim_axes = %s" % (self.environment.conf.s_ndims, dim_axes,)
+        full_axes = np.meshgrid(*tuple(dim_axes), indexing='ij')
+        print "rh_model_sweep_generate_input_grid: full_axes = %s, %s" % (len(full_axes), full_axes,)
+
+        for i in range(len(full_axes)):
+            print i, full_axes[i].shape
+            print i, full_axes[i].flatten()
+
+        # return proxy
+        error_grid = np.vstack([full_axes[i].flatten() for i in range(len(full_axes))])
+        print "error_grid", error_grid.shape
+
+        # draw state / goal configurations
+        X_accum = []
+        states = np.linspace(-1, 1, sweepsteps)
+        # for state in range(1): # sweepsteps):
+        for state in states:
+            # randomize initial position
+            # self.M_prop_pred = self.environment.compute_motor_command(np.random.uniform(-1.0, 1.0, (1, self.odim)))
+            # draw random goal and keep it fixed
+            # self.goal_prop = self.environment.compute_motor_command(np.random.uniform(-1.0, 1.0, (1, self.odim)))
+            self.goal_prop = self.environment.compute_motor_command(np.ones((1, self.odim)) * state)
+            # self.goal_prop = np.random.uniform(self.environment.conf.m_mins, self.environment.conf.m_maxs, (1, self.odim))
+            GOALS = np.repeat(self.goal_prop, error_grid.shape[1], axis = 0) # as many goals as error components
+            # FIXME: hacks for M1/M2
+            if self.mdl.idim == 3:
+                X = GOALS
+            elif self.mdl.idim == 6:
+                X = np.hstack((GOALS, error_grid.T))
+            else:
+                X = np.hstack((GOALS, error_grid.T))
+            X_accum.append(X)
+
+        X_accum = np.array(X_accum)
+
+        # don't need this?
+        # X_accum = X_accum.reshape((X_accum.shape[0] * X_accum.shape[1], X_accum.shape[2]))
+        
+        print "X_accum.shape = %s, mdl.idim = %d, mdl.odim = %d" % (X_accum.shape, self.mdl.idim, self.mdl.odim)
+        # print X_accum
+        X = X_accum
+        # X's and pred's indices now mean: slowest: goal, e1, e2, fastest: e3
+        self.X_model_sweep = X.copy()
+        return X
+        # print "self.X_model_sweep.shape", self.X_model_sweep.shape
+
+        
     def rh_model_sweep_generate_input_grid(self):
         """ActiveInferenceExperiment.rh_model_sweep_generate_input_grid
 
@@ -1018,22 +1097,8 @@ class ActiveInferenceExperiment(object):
         See also: rh_model_sweep_generate_input_random"""
         
         # grid resolution
-        sweepsteps = 5 # 11 # 21
-
-        # # extero config
-        # dim_axes = [np.linspace(self.environment.conf.s_mins[i], self.environment.conf.s_maxs[i], sweepsteps) for i in range(self.environment.conf.s_ndims)]
-        # # dim_axes = [np.linspace(self.environment.conf.s_mins[i], self.environment.conf.s_maxs[i], sweepsteps) for i in range(self.mdl.idim)]
-        # print "rh_model_sweep_generate_input_grid: s_ndims = %d, dim_axes = %s" % (self.environment.conf.s_ndims, dim_axes,)
-        # full_axes = np.meshgrid(*tuple(dim_axes), indexing='ij')
-        # print "rh_model_sweep_generate_input_grid: full_axes = %s, %s" % (len(full_axes), full_axes,)
-
-        # for i in range(len(full_axes)):
-        #     print i, full_axes[i].shape
-        #     print i, full_axes[i].flatten()
-
-        # # return proxy
-        # error_grid = np.vstack([full_axes[i].flatten() for i in range(len(full_axes))])
-        # print "error_grid", error_grid.shape
+        # sweepsteps = 5 # 11 # 21
+        sweepsteps = 11 # 21
 
         print "%s.map_model_type03_goal_prediction_error self.mdl.idim = %d, self.mdl.odim = %s" % (self.__class__.__name__, self.mdl.idim, self.mdl.odim)
 
@@ -1095,7 +1160,7 @@ class ActiveInferenceExperiment(object):
         assert hasattr(self, "X_model_sweep")
         pred = []
         for i in range(self.X_model_sweep.shape[0]): # loop over start states
-            print "trying a predict with X[%d] = %s" % (i, self.X_model_sweep.shape)
+            print "trying a predict with X[%d] = %s on model %s with idim = %d / odim %d" % (i, self.X_model_sweep.shape, self.mdl, self.mdl.idim, self.mdl.odim)
             # this might go wrong with different models
             pred.append(self.mdl.predict(self.X_model_sweep[i]))
         pred = np.array(pred)
@@ -1656,6 +1721,7 @@ def plot_scattermatrix_reduced(df):
     gs = gridspec.GridSpec(Ys.shape[1], Xs.shape[1])
     pl.ioff()
     fig = pl.figure()
+    fig.suptitle("plot_scattermatrix_reduced")
     # alpha = 1.0 / np.power(numsamples, 1.0/(Xs.shape[1] - 0))
     alpha = 0.2
     print "alpha", alpha
