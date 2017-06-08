@@ -567,6 +567,7 @@ class ActiveInferenceExperiment(object):
 
         # sample error gradient
         numsamples = 20
+        # was @ 50
         if i % 1 == 0:
             from sklearn import linear_model
             import sklearn
@@ -578,6 +579,7 @@ class ActiveInferenceExperiment(object):
             M_ = []
             for i in range(numsamples):
                 # S_.append(np.random.normal(self.S_prop_pred, 0.01 * self.environment.conf.m_maxs, self.S_prop_pred.shape))
+                # larger sampling range
                 S_.append(np.random.normal(self.S_prop_pred, 0.3 * self.environment.conf.m_maxs, self.S_prop_pred.shape))
                 # print "S_[-1]", S_[-1]
                 M_.append(self.environment.compute_motor_command(S_[-1]))
@@ -1780,18 +1782,18 @@ def test_models(args):
     odim = 2
     numdatapoints = 10
     
-    for aimclass in [ActInfModel, ActInfKNN, ActInfSOESGP]:
-        print("aimclass", aimclass)
+    for aimclass in [ActInfModel, ActInfKNN, ActInfSOESGP, ActInfSTORKGP, ActInfGMM, ActInfHebbianSOM]:
+        print("Testing aimclass = %s" % (aimclass,))
         aim = aimclass(idim = idim, odim = odim)
 
         X = np.random.uniform(-0.1, 0.1, (numdatapoints, 1, idim))
         y = np.random.uniform(-0.1, 0.1, (numdatapoints, 1, odim))
 
         for i in range(numdatapoints-1):
+            print("Fitting model with X = %s, Y = %s" % (X[i].shape, y[i].shape))
             aim.fit(X[i], y[i])
         y_ = aim.predict(X[i+1])
-        print("prediction error = %s" % (y_ - y[i+1]))
-
+        print("Prediction error = %s" % (y_ - y[i+1]))
     
 def main(args):
 

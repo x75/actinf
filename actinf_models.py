@@ -163,6 +163,11 @@ class ActInfOTLModel(ActInfModel):
         return np.array(pred).reshape((1, self.odim))
         
     def fit(self, X, y):
+        """ActInfOTLModel.fit
+
+        Fit model to data X, y
+        """
+        
         if X.shape[0] > 1: # batch of data
             return self.fit_batch(X, y)
         
@@ -185,7 +190,7 @@ class ActInfOTLModel(ActInfModel):
 
     def fit_batch(self, X, y):
         for i in range(X.shape[0]):
-            self.fit(X[i], y[i])
+            self.fit(X[[i]], y[[i]])
         
     def save(self, filename):
         otlmodel_ = self.otlmodel
@@ -257,7 +262,7 @@ class ActInfSOESGP(ActInfOTLModel):
                     False, self.kernel_params, self.noise, self.epsilon,
                     self.capacity, self.random_seed)
         im = res_input_matrix_random_sparse(self.idim, self.res_size, 0.2)
-        print("im", type(im))
+        # print("im", type(im))
         self.otlmodel.setInputWeights(im.tolist())
 
 ################################################################################
@@ -1316,7 +1321,12 @@ def generate_inverted_sinewave_dataset(N = 1000):
     return X,Y
 
 def test_model(args):
-    import pylab as pl
+    """actinf_models.test_model
+
+    Test the model type given in args.modelclass on data
+    """
+    
+    # import pylab as pl
 
     np.random.seed(args.seed)
     
@@ -1373,10 +1383,10 @@ def test_model(args):
 
     print("Testing model class %s, %s" % (mdlcls, mdl))
 
-    print("X.shape = %s, Y.shape = %s" % (X.shape, Y.shape))
-    
+    print("Fitting model with X.shape = %s, Y.shape = %s" % (X.shape, Y.shape))
     mdl.fit(X, Y)
     
+    print("Plotting model %s, %s" % (mdlcls, mdl))
     if args.modelclass == "HebbSOM":
         
         e_nodes, p_nodes = hebbsom_get_map_nodes(mdl, idim, odim)
@@ -1406,7 +1416,7 @@ def test_model(args):
         # pl.plot(nodes, filter_e.map.neurons[:,:,1], "ko", alpha=0.5, ms=10)
         # pl.show()
     
-    else:
+    elif args.modelclass == "GMM":
         nodes = np.array(mdl.cen_lst)
         covs  = np.array(mdl.cov_lst)
 
@@ -1427,9 +1437,14 @@ def test_model(args):
         plot_predictions_over_data_ts(X, Y, mdl)
         
         plot_predictions_over_data(X, Y, mdl)
-
+    elif args.modelclass in ["KNN", "SOESGP", "STORKGP"]:
+        # print("hello")
+        plot_predictions_over_data_ts(X, Y, mdl)
+        plot_predictions_over_data(X, Y, mdl)
         
-    pl.show()
+        
+    pl.draw()
+    pl.pause(1e-9)
     
         
 if __name__ == "__main__":
@@ -1442,5 +1457,14 @@ if __name__ == "__main__":
     parser.add_argument("-ne", "--numepisodes", type=int, help="Number of episodes [10]", default=10)
     parser.add_argument("-s",  "--seed",        type=int, help="seed for RNG [0]",        default=0)
     args = parser.parse_args()
-    
-    test_model(args)
+
+    if args.modelclass == "all":
+        pl.ion()
+        for mdlcls in ["KNN", "SOESGP", "STORKGP", "GMM", "HebbSOM"]:
+            args.modelclass = mdlcls
+            test_model(args)
+    else:
+        test_model(args)
+
+    pl.ioff()
+    pl.show()

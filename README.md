@@ -7,19 +7,27 @@ and Guido Schillaci.
 This just came out of my main work repo as a submodule for easier
 sharing. This module is work in progress so please expect the
 interface to be changing while integration is happening. If you want
-to make changes, fork and pull request, cheers.
+to make changes, fork and send a pull request.
+
+**Update 20170607** I'm freezing this repository in favor of
+  integrating the experiments and models into
+  [https://github.com/x75/smp_graphs](smp_graphs).
 
 ## Dependencies
 
-Apart from the base dependencies numpy, scipy, sklearn, matplotlib we
-need specifically:
- - explauto for the simple_arm, probably best to use my fork of
-   explauto at https://github.com/x75/explauto, then checkout "smp"
-   branch
+Apart from the base dependencies numpy, scipy, sklearn, and matplotlib
+which you can install via distro mechanisms or pip, we need additionally:
+ - explauto for the environments, simple_arm and pointmass. You will
+   need to use my fork of explauto at https://github.com/x75/explauto
+   and checkout the "smp" branch
  - PyPR: pip install pypr for gaussian mixtures with conditional inference
- - kohonen, SOM library, also use my fork at
-   https://github.com/x75/kohonen, branch is master. We need this in active_inference_hebbsom.py
- - otl: Harold Soh's online temporal learning library, use my github import from https://github.com/x75/otl
+ - kohonen, SOM library, also need to use my fork at
+   https://github.com/x75/kohonen, branch master in this case. We need this in active_inference_hebbsom.py
+ - otl: Harold Soh's online temporal learning library, use my github
+   import from https://github.com/x75/otl and follow build instruction
+   there, call cmake to build _with_ python wrappers
+
+I just build these locally and export each directory into my PYTHONPATH.
 
 ## Files
 
