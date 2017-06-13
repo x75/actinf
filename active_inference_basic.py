@@ -58,7 +58,6 @@ modes = [
     "m2_error_nd_ext",
     "plot_system",
     "test_models", # simple model test
-    "custom_colorbar",
 ]
 
 actinf_environments = [
@@ -70,13 +69,6 @@ actinf_environments = [
 def gaussian(m, s, x):
     """univariate gaussian"""
     return 1/(s*np.sqrt(2*np.pi)) * np.exp(-0.5*np.square((m-x)/s))
-
-def get_ax_size(fig, ax):
-    bbox = ax.get_window_extent().transformed(fig.dpi_scale_trans.inverted())
-    width, height = bbox.width, bbox.height
-    width *= fig.dpi
-    height *= fig.dpi
-    return width, height
 
 class ActiveInferenceExperiment(object):
     def __init__(self, mode = "m1_goal_error_nd",
@@ -364,9 +356,6 @@ class ActiveInferenceExperiment(object):
             # wow, functools
             self.make_plot_system_function_and_exec()
 
-        elif mode == "custom_colorbar":
-            self.custom_colorbar()
-                        
         else:
             print "FAIL: unknown mode, choose from %s" % (", ".join(modes))
             sys.exit(1)
@@ -400,112 +389,6 @@ class ActiveInferenceExperiment(object):
         f = self.make_function_from_hooks(funcdict)
         f(0)
         # return f
-
-    def custom_colorbar(self):
-
-        # notes
-
-        # subplot / grid / axes
-        # https://matplotlib.org/users/gridspec.html
-        # http://matplotlib.org/1.5.3/examples/axes_grid/index.html
-        # subplot, subplot2grid, rowspan/colspan, gridspec, axes_grid
-
-        # colorbar
-        # custom colorbar with custom axis from grid
-        # axes_grid, insets, ...
-
-        import matplotlib as mpl
-        from mpl_toolkits.axes_grid1.inset_locator import inset_axes
-
-        numplots = 3
-        
-        a = np.random.exponential(scale = 1.0)
-        b = np.random.exponential(scale = 1.0)
-        n = 32
-        X = np.random.beta(a = a, b = b, size = (numplots, n, n))
-        print "a = %f, b = %f, X = %s" % (a, b, X)
-
-        fig = pl.figure()
-
-        # fig, (ax1, ax2) = pl.subplots(1, 2, figsize=[6, 3])
-        # ax2 = pl.subplot2grid((3, 3), (1, 0), colspan=2)        
-
-        gs = gridspec.GridSpec(2, 2 * numplots, width_ratios = [9, 1] * numplots)
-        gs.hspace = 0.05
-        gs.wspace = 0.05
-        
-        for i in range(numplots):
-            cmap = pl.get_cmap("Reds")
-            norm = mpl.colors.Normalize(vmin=0, vmax=np.max(X[i]))
-            
-            # ax_im = pl.subplot2grid((1, 2 * numplots), (0, (2 * i)    ))
-            # ax_cb = pl.subplot2grid((1, 2 * numplots), (0, (2 * i) + 1))
-            # ax = fig.add_subplot(1, numplots, i+1)
-            ax_im = fig.add_subplot(gs[0, (2 * i)    ])
-            ax_cb = fig.add_subplot(gs[0, (2 * i) + 1])
-
-            img = ax_im.pcolormesh(X[i], norm = norm, cmap = cmap)
-            ax_im.set_aspect(1.0)
-
-            cb1 = mpl.colorbar.ColorbarBase(
-                ax_cb, cmap=cmap, norm=norm, orientation='vertical')
-            cb1.set_label('Some Units')
-            ax_cb.set_aspect(9.0/1.0)
-
-            print ax_im.get_position(), ax_im.get_aspect()
-            print ax_cb.get_position(), ax_cb.get_aspect()
-            
-            # cbar = pl.colorbar(mappable = img, orientation = "vertical", cax = ax_cb)
-            w_im, h_im = get_ax_size(fig, ax_im)
-            w_cb, h_cb = get_ax_size(fig, ax_cb)
-
-            print "w_im = %s, h_im = %s" % (w_im, h_im)
-            print "w_cb = %s, h_cb = %s" % (w_cb, h_cb)
-
-        for i in range(numplots):
-            cmap = pl.get_cmap("Reds")
-            norm = mpl.colors.Normalize(vmin=0, vmax=np.max(X[i]))
-            
-            # ax_im = pl.subplot2grid(gs.get_geometry(), (0, (2 * i)    ), colspan = 2)
-            # ax_cb = pl.subplot2grid(gs.get_geometry(), (0, (2 * i) + 1))
-            # ax = fig.add_subplot(1, numplots, i+1)
-            ax_im = fig.add_subplot(gs[1,(2 * i):(2*i+1)])
-            # ax_cb = inset_axes(ax_im,
-            #         width="50%",  # width = 10% of parent_bbox width
-            #         height="5%",  # height : 50%
-            #         loc=1)
-            ax_cb = inset_axes(ax_im,
-                   width="5%",  # width = 10% of parent_bbox width
-                   height = "%d" % (i * 30 + 40, ) + "%",  # height : 50%
-                   loc=3,
-                   bbox_to_anchor=(1.05, 0., 1, 1),
-                   bbox_transform=ax_im.transAxes,
-                   borderpad=0,
-                   )
-            # ax_cb = fig.add_subplot(gs[(numplots * 2) + (2 * i) + 1])
-
-            img = ax_im.pcolormesh(X[i], norm = norm, cmap = cmap)
-            ax_im.set_aspect(1.0)
-
-            cb1 = mpl.colorbar.ColorbarBase(
-                ax_cb, cmap=cmap, norm=norm, orientation='vertical')
-            cb1.set_label('Some Units')
-            # ax_cb.set_aspect(9.0/1.0)
-
-            print ax_im.get_position(), ax_im.get_aspect()
-            print ax_cb.get_position(), ax_cb.get_aspect()
-            
-            w_im, h_im = get_ax_size(fig, ax_im)
-            w_cb, h_cb = get_ax_size(fig, ax_cb)
-
-            print "w_im = %s, h_im = %s" % (w_im, h_im)
-            print "w_cb = %s, h_cb = %s" % (w_cb, h_cb)
-
-            
-
-        fig.show()
-
-        pl.show()
         
     def make_function_from_hooks(self, hookdict):
         """return a single function composed of hooks in the dictionary (ordered), gleaned from
