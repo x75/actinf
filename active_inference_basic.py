@@ -225,11 +225,33 @@ class ActiveInferenceExperiment(object):
         rh_learn_proprio function is looped over numstep times.
         """
         
-        if mode == "m1_goal_error_nd":
-            """active inference / predictive coding
+        if mode == "m1_goal_error_1d":
+            """ActiveInferenceExperiment.init_wiring m1_goal_error_1d
 
-            most basic and first working version, learning in proprioceptive
-            space only
+            Model variant M1, 1-dimensional data, proprioceptive space
+            """
+
+            # learning loop hooks
+            self.rh_learn_proprio_hooks["hook00"] = self.lh_sample_discrete_uniform_goal
+            self.rh_learn_proprio_hooks["hook01"] = self.lh_learn_proprio_base_0
+            self.rh_learn_proprio_hooks["hook02"] = self.lh_learn_proprio_e2p2e
+            self.rh_learn_proprio_hooks["hook03"] = self.lh_do_logging
+
+            # experiment loop hooks
+            self.run_hooks["hook00"] = self.make_plot_system_function_and_exec # sweep system before learning
+            self.run_hooks["hook01"] = partial(self.rh_learn_proprio, iter_start = 0, iter_end = self.numsteps/2)
+            self.run_hooks["hook02"] = self.rh_learn_proprio_save
+            self.run_hooks["hook03"] = self.make_plot_model_function_and_exec # sweep model after learning
+            # self.run_hooks["hook03"] = self.rh_check_for_model_and_map
+            self.run_hooks["hook05"] = partial(self.rh_learn_proprio, iter_start = self.numsteps/2, iter_end = self.numsteps)
+            self.run_hooks["hook06"] = self.rh_learn_proprio_save
+            self.run_hooks["hook07"] = self.experiment_plot_basic # plot experiment timeseries illustrative of operation
+            self.run_hooks["hook99"] = self.make_plot_model_function_and_exec # sweep model after learning
+                        
+        elif mode == "m1_goal_error_nd":
+            """ActiveInferenceExperiment.init_wiring m1_goal_error_nd
+
+            Model variant M1, n-dimensional data, proprioceptive space
 
             1. sample proprio goal ->
             2. make proprio goal/state prediction ->
@@ -252,25 +274,16 @@ class ActiveInferenceExperiment(object):
             self.run_hooks["hook03"] = self.rh_check_for_model_and_map
             self.run_hooks["hook99"] = self.experiment_plot
 
-        elif mode == "m2_error_nd":
-            """active inference / predictive coding: most basic version (?), proprioceptive only
-        
-            just goal/state error -> mdl -> goal/state error prediction -> goal/state error -> update forward model"""
-
-            self.rh_learn_proprio_hooks["hook01"] = self.lh_sample_discrete_uniform_goal
-            self.rh_learn_proprio_hooks["hook02"] = self.lh_learn_proprio_base_1
-            self.rh_learn_proprio_hooks["hook03"] = self.lh_do_logging
-            
-            self.run_hooks["hook01"] = self.rh_learn_proprio_init_1
-            self.run_hooks["hook02"] = partial(self.rh_learn_proprio, iter_start = 0, iter_end = self.numsteps)
-            self.run_hooks["hook03"] = self.rh_learn_proprio_save
-            # self.run_hooks["hook04"] = self.rh_check_for_model_and_map
-            self.run_hooks["hook99"] = self.experiment_plot
-                        
         elif mode == "m1_goal_error_nd_e2p":
-            """run basic proprio learning, record extero/proprio data, fit probabilistic / multivalued model 'mm'
-            to e/p data, then drive the trained proprio model with exteroceptive goals that
-            get translated to proprio goals using 'mm'"""
+            """ActiveInferenceExperiment.init_wiring m1_goal_error_nd_e2p
+
+            Model variant M1, n-dimensional data, extero- and proprioceptive space
+
+            1 run basic proprio learning
+            2 record extero/proprio data
+            3 fit multi-hypotheses probabilistic model 'mm' to e/p data
+            4 drive the trained proprio model with exteroceptive goals 
+              getting translated to proprio goals using 'mm'"""
             
             # learning loop hooks
             self.rh_learn_proprio_hooks["hook01"] = self.lh_learn_proprio_base_0
@@ -290,12 +303,27 @@ class ActiveInferenceExperiment(object):
             self.run_hooks["hook08"] = self.rh_e2p_sample_and_drive_plot
             self.run_hooks["hook99"] = self.experiment_plot
             
+        elif mode == "m2_error_nd":
+            """ActiveInferenceExperiment.init_wiring m2_error_nd
+
+            Model variant M2, n-dimensional data, proprioceptive space
+            """
+
+            self.rh_learn_proprio_hooks["hook01"] = self.lh_sample_discrete_uniform_goal
+            self.rh_learn_proprio_hooks["hook02"] = self.lh_learn_proprio_base_1
+            self.rh_learn_proprio_hooks["hook03"] = self.lh_do_logging
+            
+            self.run_hooks["hook01"] = self.rh_learn_proprio_init_1
+            self.run_hooks["hook02"] = partial(self.rh_learn_proprio, iter_start = 0, iter_end = self.numsteps)
+            self.run_hooks["hook03"] = self.rh_learn_proprio_save
+            # self.run_hooks["hook04"] = self.rh_check_for_model_and_map
+            self.run_hooks["hook99"] = self.experiment_plot
+
         elif mode == "m2_error_nd_ext":
-            """active inference / predictive coding
+            """ActiveInferenceExperiment.init_wiring m2_error_nd_ext
 
-            most basic version, proprioceptive only
-
-            goal -> goal state prediction -> goal/state error -> update forward model
+            Model variant M3, n-dimensional data, proprioceptive space and
+            error gradient sampling
             """
 
             # only works for pointmass?
@@ -320,27 +348,11 @@ class ActiveInferenceExperiment(object):
             self.run_hooks["hook98"] = self.experiment_plot
             self.run_hooks["hook99"] = self.make_plot_model_function_and_exec # sweep model after learning
             
-        elif mode == "m1_goal_error_1d":
-            """Experiment: Basic operation M1 on 1-dimensional data"""
-
-            # learning loop hooks
-            self.rh_learn_proprio_hooks["hook00"] = self.lh_sample_discrete_uniform_goal
-            self.rh_learn_proprio_hooks["hook01"] = self.lh_learn_proprio_base_0
-            self.rh_learn_proprio_hooks["hook02"] = self.lh_learn_proprio_e2p2e
-            self.rh_learn_proprio_hooks["hook03"] = self.lh_do_logging
-
-            # experiment loop hooks
-            self.run_hooks["hook00"] = self.make_plot_system_function_and_exec # sweep system before learning
-            self.run_hooks["hook01"] = partial(self.rh_learn_proprio, iter_start = 0, iter_end = self.numsteps/2)
-            self.run_hooks["hook02"] = self.rh_learn_proprio_save
-            self.run_hooks["hook03"] = self.make_plot_model_function_and_exec # sweep model after learning
-            # self.run_hooks["hook03"] = self.rh_check_for_model_and_map
-            self.run_hooks["hook05"] = partial(self.rh_learn_proprio, iter_start = self.numsteps/2, iter_end = self.numsteps)
-            self.run_hooks["hook06"] = self.rh_learn_proprio_save
-            self.run_hooks["hook07"] = self.experiment_plot_basic # plot experiment timeseries illustrative of operation
-            self.run_hooks["hook99"] = self.make_plot_model_function_and_exec # sweep model after learning
-                        
         elif mode == "plot_system":
+            """ActiveInferenceExperiment.init_wiring plot_system
+
+            Plot the input/output behaviour of an environment/system.
+            """
             # wow, functools
             self.make_plot_system_function_and_exec()
                         
@@ -905,7 +917,7 @@ class ActiveInferenceExperiment(object):
         
         pl.ioff()
         # 2a. plot sampling results
-        pl.suptitle("type04: step 1 + 2: learning proprio, then learning e2p")
+        pl.suptitle("%s step 1 + 2: learning proprio, then learning e2p" % (self.mode,))
         ax = pl.subplot(211)
         pl.title("Exteroceptive state S_e, extero to proprio mapping p2e")
         self.S_ext = ax.plot(self.logs["S_ext"], "k-", alpha=0.8, label="S_e")
@@ -938,7 +950,7 @@ class ActiveInferenceExperiment(object):
     def rh_e2p_sample_and_drive_plot(self):
         # e2pidx = slice(self.numsteps,self.numsteps*2)
         e2pidx = slice(0, self.numsteps)
-        pl.suptitle("top: extero goal and extero state, bottom: error_e = |g_e - s_e|^2")
+        pl.suptitle("%s top: extero goal and extero state, bottom: error_e = |g_e - s_e|^2" % (self.mode,))
         pl.subplot(211)
         pl.plot(self.logs["goal_ext"][e2pidx])
         pl.plot(self.logs["S_ext"][e2pidx])
@@ -1105,10 +1117,12 @@ class ActiveInferenceExperiment(object):
         # print "scatter_data_raw", scatter_data_raw.shape
         # # df = pd.DataFrame(scatter_data_raw, columns=["x_%d" % i for i in range(scatter_data_raw.shape[1])])
         # df = pd.DataFrame(scatter_data_raw, columns=scatter_data_cols)
- 
+
+        title = "%s, input/output sweep of model %s at time %d" % (self.mode, self.model, -1)
+        
         # plot_scattermatrix(df)
         # plot_scattermatrix_reduced(df)
-        plot_colormeshmatrix_reduced(self.X_model_sweep, self.Y_model_sweep, ymin = -1.0, ymax = 1.0)
+        plot_colormeshmatrix_reduced(self.X_model_sweep, self.Y_model_sweep, ymin = -1.0, ymax = 1.0, title = title)
         
     ################################################################################
     def map_model_m1_goal_error_nd(self):
@@ -1117,7 +1131,7 @@ class ActiveInferenceExperiment(object):
         doplot_scattermatrix = False
         
         # turn off interactive mode from explauto
-        pl.ioff()
+        # pl.ioff()
 
         # generate model input sweep as meshgrid
         X_accum = self.rh_model_sweep_generate_input_grid()
@@ -1185,23 +1199,30 @@ class ActiveInferenceExperiment(object):
         
         ############################################################
         # 3D scatter
-        pl.ioff()
+        # pl.ioff()
         fig = pl.figure()
         cols = ["k", "r", "b", "g", "y", "c", "m"] * 10
-        axs = [None for i in range(numgrid)]
+
+
+        i = 0
+        ax = fig.add_subplot(1, 1, i+1, projection='3d')
+        ax.set_title("GOAL = %s" % (self.X_model_sweep[i,0,:3]), fontsize=8)
+            
         for i in range(numgrid):
             print "grid #%d" % i
             # sl = slice(i * (numgrid**3), (i+1) * (numgrid**3))
             sl = slice(i, i+1, None)
             of = 0 # (i*2)
-            axs[i] = fig.add_subplot(1, numgrid, i+1, projection='3d')
+            # ax = fig.add_subplot(1, numgrid, i+1, projection='3d')
             # print "sl", sl, "of", of, "ax", axs[i] #, error_grid.shape
             # # axs[i].scatter3D(error_grid.T[sl,0] + of, error_grid.T[sl,1], error_grid.T[sl,2], c=cols[i])
             # # axs[i].scatter3D(X_accum[sl,0] + of, X_accum[sl,1], X_accum[sl,2], c=cols[i])
             # # axs[i].set_title("GOAL = %s, state = %s" % (X[i*125,:3], X[i*125,3:]))
             # # axs[i].set_title("state/GOAL error = %s" % (X[i*125,3:] - X[i*125,:3]))
-            axs[i].set_title("GOAL = %s" % (self.X_model_sweep[i,0,:3]), fontsize=8)
-            axs[i].scatter3D(pred[sl,:,0] + of, pred[sl,:,1], pred[sl,:,2], c=cols[i], alpha = 0.33)
+            # ax.set_title("GOAL = %s" % (self.X_model_sweep[i,0,:3]), fontsize=8)
+            # tmp_goals = np.self.X_model_sweep[i,:,0]
+            ax.scatter3D(self.X_model_sweep[i,:,0], self.X_model_sweep[i,:,1], self.X_model_sweep[i,:,2], c = cols[i], alpha = 0.2, s = 40)
+            ax.scatter3D(pred[sl,:,0] + of, pred[sl,:,1], pred[sl,:,2], c=cols[i], alpha = 0.33)
             # # axs[i].scatter(error_grid.T[sl,0] + of, error_grid.T[sl,1], c=cols[i])
             # axs[i].set_aspect(1.0)
             # axs[i].set_xlabel("d1")
@@ -1210,8 +1231,10 @@ class ActiveInferenceExperiment(object):
             
             # # pl.subplot(1, numgrid, i+1)
             # # pl.scatter(error_grid.T[sl,0] + of, error_grid.T[sl,1], c=cols[i])
-            
-        pl.show()
+
+        fig.show()
+        pl.draw()
+        pl.pause(1e-9)
 
         # scatterplot nd
         # historgram  nd
@@ -1256,7 +1279,7 @@ class ActiveInferenceExperiment(object):
         # pred_red = pred_pca.transform(pred)
         # print "pred_red", pred_red.shape
         
-        pl.ioff()
+        # pl.ioff()
 
         # ################################################################################
         # # plot type 1
@@ -1298,20 +1321,25 @@ class ActiveInferenceExperiment(object):
         # pl.pcolormesh(X_red[:,0], X_red[:,1], pred_red)
         # A = np.hstack((X, pred[:,[0, 1]]))
         # (5, 5, 5 Goals, 5, 5, 5, errors, 5, 5, 5, preds) z.shape = (5, 5, 5, 5)
+
+        cbar_orientation = "vertical" # "horizontal"
+        fig2 = pl.figure()
+        
         vmin, vmax = np.min(pred), np.max(pred)
         for i in range(pred.shape[2]):
-            pl.subplot(1, pred.shape[2], i+1)
+            # pl.subplot(1, pred.shape[2], i+1)
+            ax = fig2.add_subplot(1, pred.shape[2], i+1)
             # p1 = pred[:,i].reshape((numgrid, numgrid, numgrid, numgrid))
             print i, pred.shape, pred[...,i].shape
             p1 = pred[...,i].reshape((numgrid, numgrid, numgrid, numgrid))
             d1_stacked = dimensional_stacking(p1, [1,0 ], [3, 2])
-            pl.pcolormesh(d1_stacked, vmin=vmin, vmax=vmax)
-            pl.gca().set_aspect(1.0)
+            mpl = ax.pcolormesh(d1_stacked, vmin=vmin, vmax=vmax)
+            ax.set_aspect(1.0)
             # if i == (pred.shape[1]/2):
-            pl.colorbar(orientation="horizontal") #, use_gridspec=True)
+            pl.colorbar(mappable = mpl, orientation = cbar_orientation, ax = ax) #, use_gridspec=True)
             # resize_panel_horiz(resize_by = 0.8)
             # resize_panel_vert(resize_by = 0.8)
-        pl.show()
+        pl.draw()
 
         ############################################################################
         # plot type 4: scattermatrix
@@ -1330,7 +1358,7 @@ class ActiveInferenceExperiment(object):
             
             df = pd.DataFrame(scatter_data_raw, columns=["x_%d" % i for i in range(scatter_data_raw.shape[1])])
             scatter_matrix(df, alpha=0.2, figsize=(10, 10), diagonal='kde')
-            pl.show()
+            pl.draw()
 
         # pl.subplot(121)
         # # pl.scatter(X_red[:,0], X_red[:,1])
@@ -1346,6 +1374,7 @@ class ActiveInferenceExperiment(object):
         # pick given goal transition and corresponding errors, sweep errors
 
         # try and make it unstable?
+        pl.pause(1e-9)
         
     ################################################################################
     def run_m2_error_nd(self):
@@ -1476,7 +1505,7 @@ class ActiveInferenceExperiment(object):
         pl.ioff()
 
         fig = pl.figure()
-        fig.suptitle("Mode: %s using %s (X: FM input, state pred: FM output)" % (self.mode, self.model))
+        fig.suptitle("%s using %s (X: fwd mdl input, state pred: fwd mdl output)" % (self.mode, self.model))
         
         ax = fig.add_subplot(511)
         ax.set_title("Proprioceptive goal")
@@ -1540,7 +1569,7 @@ class ActiveInferenceExperiment(object):
         pl.ioff()
 
         fig = pl.figure()
-        fig.suptitle("Mode: %s using %s (X: FM input, state pred: FM output)" % (self.mode, self.model))
+        fig.suptitle("%s using %s (X: FM input, state pred: FM output)" % (self.mode, self.model))
         
         ax = fig.add_subplot(311)
         ax.set_title("Proprioceptive goal")
@@ -1646,8 +1675,11 @@ def plot_scattermatrix_reduced(df, title = "plot_scattermatrix_reduced"):
         fig.savefig("fig_%03d_scattermatrix_reduced.pdf" % (fig.number), dpi=300)
     fig.show()
             
-def plot_colormeshmatrix_reduced(X, Y, ymin = None, ymax = None):
-    print "X.shape", X.shape, "Y.shape", Y.shape
+def plot_colormeshmatrix_reduced(
+        X, Y, ymin = None, ymax = None,
+        title = "plot_colormeshmatrix_reduced"):
+    
+    print "plot_colormeshmatrix_reduced X.shape", X.shape, "Y.shape", Y.shape
     # input_cols  = [i for i in df.columns if i.startswith("X")]
     # output_cols = [i for i in df.columns if i.startswith("Y")]
     # Xs = df[input_cols]
@@ -1658,10 +1690,12 @@ def plot_colormeshmatrix_reduced(X, Y, ymin = None, ymax = None):
     
     # # numplots = Xs.shape[1] * Ys.shape[1]
     # # print "numplots = %d" % numplots
-    
+
+    cbar_orientation = "vertical" # "horizontal"
     gs = gridspec.GridSpec(Y.shape[2], X.shape[2]/2)
     pl.ioff()
     fig = pl.figure()
+    fig.suptitle(title)
     # # alpha = 1.0 / np.power(numsamples, 1.0/(Xs.shape[1] - 0))
     # alpha = 0.2
     # print "alpha", alpha
@@ -1674,7 +1708,7 @@ def plot_colormeshmatrix_reduced(X, Y, ymin = None, ymax = None):
             # ax.plot(Xs.as_matrix()[:,i], Ys.as_matrix()[:,j], "ko", alpha = alpha)
             ax.set_xlabel("goal")
             ax.set_ylabel("error")
-            cbar = fig.colorbar(mappable = pcm, ax=ax, orientation="horizontal")
+            cbar = fig.colorbar(mappable = pcm, ax=ax, orientation=cbar_orientation)
             ax.set_aspect(1)
     if SAVEPLOTS:
         fig.savefig("fig_%03d_colormeshmatrix_reduced.pdf" % (fig.number), dpi=300)
@@ -1707,6 +1741,8 @@ def main(args):
     # seed PRNG
     np.random.seed(args.seed)
         
+    pl.ion()
+    
     if args.mode.startswith("test_"):
         test_models(args)
     else:
@@ -1714,17 +1750,22 @@ def main(args):
         # if args.mode.startswith("type03_1"):
         #     idim = 3
         # print "args.goal_sample_interval", args.goal_sample_interval
-        inf = ActiveInferenceExperiment(args.mode, args.model, args.numsteps,
-                                        idim = idim,
-                                        environment_str = args.environment,
-                                        goal_sample_interval = args.goal_sample_interval,
-                                        e2pmodel = args.e2pmodel,
-                                        saveplots = SAVEPLOTS)
 
+        # initialize experiment
+        inf = ActiveInferenceExperiment(
+            args.mode, args.model, args.numsteps,
+            idim = idim,
+            environment_str = args.environment,
+            goal_sample_interval = args.goal_sample_interval,
+            e2pmodel = args.e2pmodel,
+            saveplots = SAVEPLOTS)
+
+        # run experiment
         inf.run()
 
-        # inf.experiment_plot()
-        pl.show()
+    # wait for plots to be closed
+    pl.ioff()
+    pl.show()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
