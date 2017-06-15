@@ -257,7 +257,7 @@ class ActInfSOESGP(ActInfOTLModel):
         self.bootstrap()
     
     def bootstrap(self):
-        from smp.reservoirs import res_input_matrix_random_sparse
+        from reservoirs import res_input_matrix_random_sparse
         self.otlmodel.init(self.idim, self.odim, self.res_size, self.input_weight,
                     self.output_feedback_weight, self.activation_function,
                     self.leak_rate, self.connectivity, self.spectral_radius,

@@ -150,6 +150,7 @@ class ActiveInferenceExperiment(object):
         self.e2p = ActInfKNN(self.dim_ext, self.odim)
         self.p2e = ActInfKNN(self.odim, self.dim_ext)
 
+        self.init_states()
         self.init_e2p(e2pmodel)
                 
         ################################################################################
@@ -198,6 +199,9 @@ class ActiveInferenceExperiment(object):
         self.dE_prop_pred_slow = self.M_prop_pred.copy()
         self.S_prop_pred = np.random.normal(0, 0.01, (1, self.odim))
 
+    def init_states(self):
+        self.X_ = np.zeros((1, self.idim))
+        
     def init_e2p(self, e2pmodel):
         """ActiveInferenceExperiment.init_e2p
 
@@ -231,18 +235,23 @@ class ActiveInferenceExperiment(object):
             Model variant M1, 1-dimensional data, proprioceptive space
             """
 
+            # only works for pointmass?
+            assert isinstance(self.environment, PointmassEnvironment), "Need PointmassEnvironment, not %s" % (self.environment,)
+            assert self.environment.conf.m_ndims == 1, "%s assumes 1D system, have %dD system" % (mode, self.environment.conf.m_ndims)
+
+            # experiment loop hooks
+            self.run_hooks["hook00"] = self.make_plot_system_function_and_exec # sweep system before learning
+            self.run_hooks["hook01"] = partial(self.rh_learn_proprio, iter_start = 0, iter_end = self.numsteps/2)
+
             # learning loop hooks
             self.rh_learn_proprio_hooks["hook00"] = self.lh_sample_discrete_uniform_goal
             self.rh_learn_proprio_hooks["hook01"] = self.lh_learn_proprio_base_0
             self.rh_learn_proprio_hooks["hook02"] = self.lh_learn_proprio_e2p2e
             self.rh_learn_proprio_hooks["hook03"] = self.lh_do_logging
 
-            # experiment loop hooks
-            self.run_hooks["hook00"] = self.make_plot_system_function_and_exec # sweep system before learning
-            self.run_hooks["hook01"] = partial(self.rh_learn_proprio, iter_start = 0, iter_end = self.numsteps/2)
+            # experiment loop hooks cont'd.
             self.run_hooks["hook02"] = self.rh_learn_proprio_save
             self.run_hooks["hook03"] = self.make_plot_model_function_and_exec # sweep model after learning
-            # self.run_hooks["hook03"] = self.rh_check_for_model_and_map
             self.run_hooks["hook05"] = partial(self.rh_learn_proprio, iter_start = self.numsteps/2, iter_end = self.numsteps)
             self.run_hooks["hook06"] = self.rh_learn_proprio_save
             self.run_hooks["hook07"] = self.experiment_plot_basic # plot experiment timeseries illustrative of operation
@@ -666,7 +675,7 @@ class ActiveInferenceExperiment(object):
         
         assert self.goal_prop is not None, "self.goal_prop at iter = %d is None, should be ndarray" % i
         assert self.goal_prop.shape == (1, self.odim), "self.goal_prop.shape %s is wrong, should be %s" % (self.goal_prop.shape, (1, self.odim))
-
+        
         # prepare model input X as goal and prediction error
         self.X_ = np.hstack((self.goal_prop, self.E_prop_pred))
 
@@ -684,21 +693,16 @@ class ActiveInferenceExperiment(object):
         # add noise
         self.M_prop_pred += np.random.normal(0, 0.01, self.M_prop_pred.shape)
 
+        # execute command propagating effect through system, body + environment
+        self.S_ext = self.environment.compute_sensori_effect(self.M_prop_pred.T).reshape((1, self.dim_ext))
+        
         # prediction error's
         self.E_prop_pred_goal  = self.M_prop_pred - self.goal_prop
         self.E_prop_pred = self.E_prop_pred_goal
 
-        self.prediction_errors_extended()            
-        
-        # # prediction error's variant
-        # self.E_prop_pred_state = self.S_prop_pred - self.M_prop_pred
-        # self.E_prop_pred = self.E_prop_pred_state
-        
-        # execute command propagating effect through system, body + environment
-        self.S_ext = self.environment.compute_sensori_effect(self.M_prop_pred.T).reshape((1, self.dim_ext))
-        # self.environment.plot_arm()
-        
-        # compute target for the prediction error driven forward model
+        self.prediction_errors_extended()
+                
+        # compute the target for the  forward model from the prediction error
         # if i % 10 == 0: # play with decreased update rates
         self.y_ = self.S_prop_pred - (self.E_prop_pred * self.eta_fwd_mdl)
         # FIXME: suppress update when error is small enough (< threshold)
@@ -707,7 +711,7 @@ class ActiveInferenceExperiment(object):
         self.mdl.fit(self.X_, self.y_)
 
         self.goal_prop_tm1 = self.goal_prop.copy()
-
+        
     ################################################################################
     # proprio learning model variant 1
     def rh_learn_proprio_init_1(self):
