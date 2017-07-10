@@ -55,7 +55,7 @@ modes = [
     "m1_goal_error_nd",
     "m1_goal_error_nd_e2p",
     "m2_error_nd",
-    "m2_error_nd_ext",
+    "m1_goal_error_nd_ext",
     "plot_system",
     "test_models", # simple model test
 ]
@@ -97,7 +97,7 @@ class ActiveInferenceExperiment(object):
             self.environment = Environment.from_configuration('simple_arm', 'low_dimensional')
             self.environment.noise = 1e-9
             # dimensions
-            if mode.startswith("type03_1"):
+            if mode.startswith("m2"):
                 self.idim = self.environment.conf.m_ndims
             else:
                 self.idim = self.environment.conf.m_ndims * 2
@@ -106,7 +106,7 @@ class ActiveInferenceExperiment(object):
                 
         elif environment_str == "pointmass1d":
             self.environment = Environment.from_configuration('pointmass', 'low_dim_vel')
-            if mode.startswith("type03_1"):
+            if mode.startswith("m2"):
                 self.idim = self.environment.conf.m_ndims
             else:
                 self.idim = self.environment.conf.m_ndims * 2
@@ -115,7 +115,7 @@ class ActiveInferenceExperiment(object):
             
         elif environment_str == "pointmass3d":
             self.environment = Environment.from_configuration('pointmass', 'mid_dim_vel')
-            if mode.startswith("type03_1"):
+            if mode.startswith("m2"):
                 self.idim = self.environment.conf.m_ndims
             else:
                 self.idim = self.environment.conf.m_ndims * 2
@@ -328,8 +328,8 @@ class ActiveInferenceExperiment(object):
             # self.run_hooks["hook04"] = self.rh_check_for_model_and_map
             self.run_hooks["hook99"] = self.experiment_plot
 
-        elif mode == "m2_error_nd_ext":
-            """ActiveInferenceExperiment.init_wiring m2_error_nd_ext
+        elif mode == "m1_goal_error_nd_ext":
+            """ActiveInferenceExperiment.init_wiring m1_goal_error_nd_ext
 
             Model variant M3, n-dimensional data, proprioceptive space and
             error gradient sampling
@@ -560,12 +560,17 @@ class ActiveInferenceExperiment(object):
         
         assert self.goal_prop is not None, "self.goal_prop at iter = %d is None, should by ndarray" % i
         assert self.goal_prop.shape == (1, self.odim), "self.goal_prop.shape is wrong, should be %s" % (1, self.odim)
-                
+
+        # print "self.goal_prop, self.E_prop_pred", self.goal_prop, self.E_prop_pred
         # prepare model input X as goal and prediction error
         self.X_ = np.hstack((self.goal_prop, self.E_prop_pred))
 
+        print "self.X_.shape", self.X_.shape, self.idim, self.odim
+
         # predict next state in proprioceptive space
         self.S_prop_pred = self.mdl.predict(self.X_)
+
+        print "self.S_prop_pred", self.S_prop_pred.shape
 
         # inverse model / motor primitive / reflex arc
         self.M_prop_pred = self.environment.compute_motor_command(self.S_prop_pred)
