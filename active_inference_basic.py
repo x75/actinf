@@ -614,8 +614,6 @@ class ActiveInferenceExperiment(object):
             
             # pl.plot(S_, M_, "ko", alpha=0.4)
             # pl.show()
-
-            
         
         self.prediction_errors_extended()
             
