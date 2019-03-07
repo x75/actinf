@@ -1320,8 +1320,8 @@ class ActiveInferenceExperiment(object):
 
         ############################################################################
         # plot type 3: pcolormesh, using dimstack
-        from smp.dimstack import dimensional_stacking
-        from smp.smp_plot import resize_panel_vert, resize_panel_horiz, put_legend_out_right, put_legend_out_top
+        from smp_base.dimstack import dimensional_stacking
+        from smp_base.plot_utils import resize_panel_vert, resize_panel_horiz, put_legend_out_right, put_legend_out_top
         # we have 4 axes with 5 steps of variation: goal, e1, e2, e3
         # we have 3 axes with 5**4 responses (function values)
         
