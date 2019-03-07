@@ -12,9 +12,8 @@ sharing. This module is work in progress so please expect the
 interface to be changing while integration is happening. If you want
 to make changes, fork and send a pull request.
 
-*Update 20170607* I'm freezing this repository in favor of
-integrating the experiments and models into
-[[file:smp_graphs][https://github.com/x75/smp\_graphs]].
+*Update 20170607* I'm freezing this repository in favor of integrating
+the experiments and models into [[https://github.com/x75/smp\_graphs][smp_graphs]].
 
 ** Dependencies
    :PROPERTIES:
