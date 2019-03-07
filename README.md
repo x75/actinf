@@ -5,7 +5,7 @@ A set of sensorimotor learning experiments using the active inference and predic
 
 This just came out of my main work repo as a submodule for easier sharing. This module is work in progress so please expect the interface to be changing while integration is happening. If you want to make changes, fork and send a pull request.
 
-**Update 20170607** I'm freezing this repository in favor of integrating the experiments and models into [smp<sub>graphs</sub>](https://github.com/x75/smp\_graphs).
+**Update 20170607** I'm freezing this repository in favor of integrating the experiments and models into [smp\_graphs](https://github.com/x75/smp\_graphs).
 
 Dependencies
 ------------

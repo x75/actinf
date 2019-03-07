@@ -1,3 +1,5 @@
+#+OPTIONS: toc:nil ^:nil
+
 * actinf - Active Inference
   :PROPERTIES:
   :CUSTOM_ID: actinf---active-inference
